@@ -1,5 +1,5 @@
 # Import Docker image
-FROM ubuntu20.04
+FROM ubuntu:20.04
 
 # Put source code in docker container
 WORKDIR app
