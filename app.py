@@ -17,7 +17,7 @@ from table_definitions import db, MonaMain, MonaAdditionalInfo, MonaSpectra, \
     AgilentMain, AgilentAdditionalInfo, AgilentMethods, \
     IDTable
 
-DB_DIRECTORY = "../db/"
+DB_DIRECTORY = "./data/db/"
 MONA_DB = DB_DIRECTORY + "mona.db"
 SPECTRABASE_DB = DB_DIRECTORY + "spectrabase.db"
 CFSRE_DB = DB_DIRECTORY + "cfsre.db"
@@ -46,7 +46,6 @@ app.secret_key = "secretkey"
 
 CORS(app, resources={r'/*': {'origins': '*'}})
 
-db.init_app(app)
 
 class SearchType(Enum):
     InChIKey = 1
@@ -522,3 +521,9 @@ def find_dtxsids(source, internal_id):
             return f"Unknown error -- no DTXSIDs found for internal ID {internal_id} from source {source}"
     else:
         return f"Unidentified source '{source}'"
+    
+if __name__ == "__main__":
+    db.init_app(app)
+    app.run(host='0.0.0.0', port=5000)
+
+
