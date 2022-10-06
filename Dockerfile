@@ -22,4 +22,4 @@ RUN pip install -r requirements.txt
 EXPOSE 5000
 
 # Run source code
-CMD [..usrbinpython3, app.py]
+CMD ["..usr/bin/python3", "app.py"]
