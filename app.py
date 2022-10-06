@@ -8,13 +8,14 @@ from flask import Flask, jsonify, request, send_file, make_response
 from flask_cors import CORS
 
 from table_definitions import db, MonaMain, MonaAdditionalInfo, MonaSpectra, \
-    CFSREMain, CFSREAdditionalInfo, CFSREMonograph, \
+    CFSREMain, CFSREAdditionalInfo, CFSREMonographs, \
     SpectrabaseMain, SpectrabaseAdditionalInfo, \
     MassbankMain, MassbankAdditionalInfo, MassbankSpectra, \
-    SWGMain, SWGAdditionalInfo, SWGMonograph, \
+    SWGMain, SWGAdditionalInfo, SWGMonographs, \
     SWGMSMain, SWGMSAdditionalInfo, SWGMSSpectra, \
     ECMMain, ECMAdditionalInfo, ECMMethods, \
     AgilentMain, AgilentAdditionalInfo, AgilentMethods, \
+    OtherMethodsMain, OtherMethodsAdditionalInfo, OtherMethodsMethods, \
     IDTable
 
 DB_DIRECTORY = "../db/"
@@ -26,6 +27,7 @@ MASSBANK_DB = DB_DIRECTORY + "massbank_eu.db"
 SWG_MONOGRAPH_DB = DB_DIRECTORY + "swg.db"
 SWG_SPECTRA_DB = DB_DIRECTORY + "swg_ms.db"
 AGILENT_DB = DB_DIRECTORY + "agilent.db"
+OTHER_METHODS_DB = DB_DIRECTORY + "other_methods.db"
 ID_DB = DB_DIRECTORY + "id.db"
 
 app = Flask(__name__)
@@ -38,7 +40,8 @@ app.config["SQLALCHEMY_BINDS"] = {
     'massbank': f"sqlite:///{MASSBANK_DB}",
     'swg_mono': f"sqlite:///{SWG_MONOGRAPH_DB}",
     'swg_ms': f"sqlite:///{SWG_SPECTRA_DB}",
-    'agilent': f"sqlite:///{AGILENT_DB}"
+    'agilent': f"sqlite:///{AGILENT_DB}",
+    'other_methods': f"sqlite:///{OTHER_METHODS_DB}"
 }
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -69,11 +72,8 @@ def search_results(search_term):
     t1 = time()
     mona_results = mona_search(search_type, search_term)
     print("Got MoNA")
-    t1_sb = time()
     spectrabase_results = spectrabase_search(search_type, search_term)
-    t2_sb = time()
     print("Got Spectrabase")
-    print("Spectrabase time: ", t2_sb - t1_sb)
     cfsre_results = cfsre_search(search_type, search_term)
     print("Got CFSRE")
     massbank_results = massbank_search(search_type, search_term)
@@ -86,15 +86,15 @@ def search_results(search_term):
     print("Got ECM")
     agilent_results = agilent_search(search_type, search_term)
     print("Got Agilent")
+    other_methods_results = other_methods_search(search_type, search_term)
+    print("Got other methods")
     t2 = time()
     print("Elapsed time: ", t2-t1)
     
 
     results = []
-    for r in [mona_results, spectrabase_results, cfsre_results, massbank_results, swg_mono_results, swg_ms_results, ecm_results, agilent_results]:
+    for r in [mona_results, spectrabase_results, cfsre_results, massbank_results, swg_mono_results, swg_ms_results, ecm_results, agilent_results, other_methods_results]:
         results.extend(r)
-
-    record_type = request.args.get("record_type")
 
     dtxsids = [r["dtxsid"] for r in results if r["dtxsid"] is not None]
     if dtxsids:
@@ -154,11 +154,10 @@ def mona_search(search_type, search_value):
     q = db.select(MonaMain.dtxsid,MonaMain.name, MonaMain.cas_number, MonaMain.inchikey,
                   MonaAdditionalInfo.spectrum_type, MonaAdditionalInfo.source, 
                   MonaAdditionalInfo.internal_id, MonaAdditionalInfo.link, MonaMain.record_type,
-                  MonaAdditionalInfo.data_type)
+                  MonaAdditionalInfo.data_type, MonaAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        inchikey_first_block = search_value[:14]
-        q = q.filter(MonaMain.inchikey.like(inchikey_first_block+"%"))
+        q = q.filter(MonaMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
         q = q.filter(MonaMain.cas_number==search_value)
     elif search_type == SearchType.CompoundName:
@@ -178,13 +177,12 @@ def spectrabase_search(search_type, search_value):
     q = db.select(SpectrabaseMain.dtxsid, SpectrabaseMain.name, SpectrabaseMain.cas_number, SpectrabaseMain.inchikey,
                   SpectrabaseAdditionalInfo.spectrum_type, SpectrabaseAdditionalInfo.source, 
                   SpectrabaseAdditionalInfo.internal_id, SpectrabaseAdditionalInfo.link, SpectrabaseMain.record_type,
-                  SpectrabaseAdditionalInfo.data_type)
+                  SpectrabaseAdditionalInfo.data_type, SpectrabaseAdditionalInfo.comment)
     
     q = q.filter(SpectrabaseMain.dtxsid != None)
     
     if search_type == SearchType.InChIKey:
-        inchikey_first_block = search_value[:14]
-        q = q.filter(SpectrabaseMain.inchikey.like(inchikey_first_block+"%"))
+        q = q.filter(SpectrabaseMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
         q = q.filter(SpectrabaseMain.cas_number==search_value)
     elif search_type == SearchType.CompoundName:
@@ -204,11 +202,10 @@ def cfsre_search(search_type, search_value):
     q = db.select(CFSREMain.dtxsid, CFSREMain.name, CFSREMain.cas_number, CFSREMain.inchikey,
                   CFSREAdditionalInfo.spectrum_type, CFSREAdditionalInfo.source, 
                   CFSREAdditionalInfo.internal_id, CFSREAdditionalInfo.link, CFSREMain.record_type,
-                  CFSREAdditionalInfo.data_type)
+                  CFSREAdditionalInfo.data_type, CFSREAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        inchikey_first_block = search_value[:14]
-        q = q.filter(CFSREMain.inchikey.like(inchikey_first_block+"%"))
+        q = q.filter(CFSREMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
         q = q.filter(CFSREMain.cas_number==search_value)
     elif search_type == SearchType.CompoundName:
@@ -228,11 +225,10 @@ def massbank_search(search_type, search_value):
     q = db.select(MassbankMain.dtxsid, MassbankMain.name, MassbankMain.cas_number, MassbankMain.inchikey,
                   MassbankAdditionalInfo.spectrum_type, MassbankAdditionalInfo.source, 
                   MassbankAdditionalInfo.internal_id, MassbankAdditionalInfo.link, MassbankMain.record_type,
-                  MassbankAdditionalInfo.data_type)
+                  MassbankAdditionalInfo.data_type, MassbankAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        inchikey_first_block = search_value[:14]
-        q = q.filter(MassbankMain.inchikey.like(inchikey_first_block+"%"))
+        q = q.filter(MassbankMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
         q = q.filter(MassbankMain.cas_number==search_value)
     elif search_type == SearchType.CompoundName:
@@ -252,11 +248,10 @@ def swg_ms_search(search_type, search_value):
     q = db.select(SWGMSMain.dtxsid, SWGMSMain.name, SWGMSMain.cas_number, SWGMSMain.inchikey,
                   SWGMSAdditionalInfo.spectrum_type, SWGMSAdditionalInfo.source, 
                   SWGMSAdditionalInfo.internal_id, SWGMSAdditionalInfo.link, SWGMSMain.record_type,
-                  SWGMSAdditionalInfo.data_type)
+                  SWGMSAdditionalInfo.data_type, SWGMSAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        inchikey_first_block = search_value[:14]
-        q = q.filter(SWGMSMain.inchikey.like(inchikey_first_block+"%"))
+        q = q.filter(SWGMSMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
         q = q.filter(SWGMSMain.cas_number==search_value)
     elif search_type == SearchType.CompoundName:
@@ -276,11 +271,10 @@ def swg_monograph_search(search_type, search_value):
     q = db.select(SWGMain.dtxsid, SWGMain.name, SWGMain.cas_number, SWGMain.inchikey,
                   SWGAdditionalInfo.spectrum_type, SWGAdditionalInfo.source, 
                   SWGAdditionalInfo.internal_id, SWGAdditionalInfo.link, SWGMain.record_type,
-                  SWGAdditionalInfo.data_type)
+                  SWGAdditionalInfo.data_type, SWGAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        inchikey_first_block = search_value[:14]
-        q = q.filter(SWGMain.inchikey.like(inchikey_first_block+"%"))
+        q = q.filter(SWGMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
         q = q.filter(SWGMain.cas_number==search_value)
     elif search_type == SearchType.CompoundName:
@@ -300,11 +294,10 @@ def ecm_search(search_type, search_value):
     q = db.select(ECMMain.dtxsid, ECMMain.name, ECMMain.cas_number, ECMMain.inchikey,
                   ECMAdditionalInfo.spectrum_type, ECMAdditionalInfo.source, 
                   ECMAdditionalInfo.internal_id, ECMAdditionalInfo.link, ECMMain.record_type,
-                  ECMAdditionalInfo.data_type)
+                  ECMAdditionalInfo.data_type, ECMAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        inchikey_first_block = search_value[:14]
-        q = q.filter(ECMMain.inchikey.like(inchikey_first_block+"%"))
+        q = q.filter(ECMMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
         q = q.filter(ECMMain.cas_number==search_value)
     elif search_type == SearchType.CompoundName:
@@ -323,11 +316,10 @@ def agilent_search(search_type, search_value):
     q = db.select(AgilentMain.dtxsid, AgilentMain.name, AgilentMain.cas_number, AgilentMain.inchikey,
                   AgilentAdditionalInfo.spectrum_type, AgilentAdditionalInfo.source, 
                   AgilentAdditionalInfo.internal_id, AgilentAdditionalInfo.link, AgilentMain.record_type,
-                  AgilentAdditionalInfo.data_type)
+                  AgilentAdditionalInfo.data_type, AgilentAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        inchikey_first_block = search_value[:14]
-        q = q.filter(AgilentMain.inchikey.like(inchikey_first_block+"%"))
+        q = q.filter(AgilentMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
         q = q.filter(AgilentMain.cas_number==search_value)
     elif search_type == SearchType.CompoundName:
@@ -341,9 +333,32 @@ def agilent_search(search_type, search_value):
     
     return [r._asdict() for r in results]
 
+def other_methods_search(search_type, search_value):
+    q = db.select(OtherMethodsMain.dtxsid, OtherMethodsMain.name, OtherMethodsMain.cas_number, OtherMethodsMain.inchikey,
+                  OtherMethodsAdditionalInfo.spectrum_type, OtherMethodsAdditionalInfo.source, 
+                  OtherMethodsAdditionalInfo.internal_id, OtherMethodsAdditionalInfo.link, OtherMethodsMain.record_type,
+                  OtherMethodsAdditionalInfo.data_type, OtherMethodsAdditionalInfo.comment)
+    
+    if search_type == SearchType.InChIKey:
+        q = q.filter(OtherMethodsMain.inchikey == search_value)
+    elif search_type == SearchType.CASRN:
+        q = q.filter(OtherMethodsMain.cas_number==search_value)
+    elif search_type == SearchType.CompoundName:
+        q = q.filter(OtherMethodsMain.name.ilike(search_value))
+    elif search_type == SearchType.DTXSID:
+        q = q.filter(OtherMethodsMain.dtxsid==search_value)
+    
+    q = q.join_from(OtherMethodsMain, OtherMethodsAdditionalInfo,
+                    OtherMethodsMain.internal_id==OtherMethodsAdditionalInfo.internal_id)
+    results = db.session.execute(q).all()
+    
+    return [r._asdict() for r in results]
+
 
 @app.route("/monograph_list")
 def monograph_list():
+    from time import gmtime, strftime
+    print("START: ", strftime("%H:%M:%S", gmtime()))
     ## Note: In the returned data, 'info_source' is a sort of sub-source, as both CFSRE and SWG
     ## seem to aggregate monographs from a couple different sources.  The 'record_source' field
     ## is used for internally identifying whether a record is in the CFSRE or SWG database.
@@ -351,41 +366,37 @@ def monograph_list():
     monograph_info = []
 
     ## info for CFSRE monographs
-    q = db.select(CFSREMonograph.internal_id)
+    q = db.select(CFSREMonographs.internal_id, CFSREMonographs.monograph_name, CFSREMonographs.year_published, CFSREMonographs.sub_source)
+    print("CFSRE START QUERY: ", strftime("%H:%M:%S", gmtime()))
     results = db.session.execute(q).all()
+    print("CFSRE QUERY RETURNED: ", strftime("%H:%M:%S", gmtime()))
     cfsre_filenames = [p.internal_id[:-4] for p in results]
     cfsre_monograph_info = []
-    for fn in cfsre_filenames:
-        fn_match = re.match("^(.*)_([0-9]{6})_(.*)$", fn)
-        cfsre_monograph_info.append({"name":fn_match.groups()[0], "date":fn_match.groups()[1], "info_source":fn_match.groups()[2], "filename":fn, "record_source":"CFSRE"})
+    for r, fn in zip(results, cfsre_filenames):
+        cfsre_monograph_info.append({"name":r.monograph_name, "year_published":r.year_published, "info_source":r.sub_source, "filename":fn, "source":"CFSRE", "internal_id":r.internal_id})
     filenames.extend(cfsre_filenames)
     monograph_info.extend(cfsre_monograph_info)
+    print("CFSRE DONE: ", strftime("%H:%M:%S", gmtime()))
 
     ## info for SWG monographs
-    q = db.select(SWGMonograph.internal_id)
+    q = db.select(SWGMonographs.internal_id, SWGMonographs.monograph_name, SWGMonographs.year_published, SWGMonographs.sub_source)
+    print("SWG START QUERY: ", strftime("%H:%M:%S", gmtime()))
     results = db.session.execute(q).all()
+    print("SWG QUERY FINISHED: ", strftime("%H:%M:%S", gmtime()))
     swg_filenames = [p.internal_id[:-4] for p in results]
-    swg_monograph_info = [{"name":fn, "date":"", "info_source":"Scientific Working Group", "filename":fn, "record_source":"Scientific Working Group"} for fn in swg_filenames]
-
+    swg_monograph_info = []
+    for r, fn in zip(results, swg_filenames):
+        swg_monograph_info.append({"name":r.monograph_name, "year_published":r.year_published, "info_source":r.sub_source, "filename":fn, "source":"Scientific Working Group", "internal_id":r.internal_id})
     filenames.extend(swg_filenames)
     monograph_info.extend(swg_monograph_info)
+    print("SWG DONE: ", strftime("%H:%M:%S", gmtime()))
     
     return jsonify({"names": filenames, "monograph_info": monograph_info})
 
 
-"""
-@app.route("/monograph_list_test")
-def monograph_list_test():
-    q = db.select(CFSREMonograph.internal_id, CFSREMain.dtxsid).join_from(CFSREMonograph, CFSREMain,
-                    CFSREMonograph.internal_id==SpectrabaseAdditionalInfo.internal_id)
-    results = db.session.execute(q).all()
-"""
-    
-
-
 @app.route("/download/cfsre/<pdf_name>")
 def download_cfsre(pdf_name):
-    q = db.select(CFSREMonograph.pdf_data).filter(CFSREMonograph.internal_id==pdf_name)
+    q = db.select(CFSREMonographs.pdf_data).filter(CFSREMonographs.internal_id==pdf_name)
     data_row = db.session.execute(q).first()
     if data_row is not None:
         pdf_content = data_row.pdf_data
@@ -399,7 +410,7 @@ def download_cfsre(pdf_name):
 
 @app.route("/download/swg/<pdf_name>")
 def download_swg(pdf_name):
-    q = db.select(SWGMonograph.pdf_data).filter(SWGMonograph.internal_id==pdf_name)
+    q = db.select(SWGMonographs.pdf_data).filter(SWGMonographs.internal_id==pdf_name)
     data_row = db.session.execute(q).first()
     if data_row is not None:
         pdf_content = io.BytesIO(data_row.pdf_data)
@@ -438,17 +449,17 @@ def retrieve_spectrum(source, internal_id):
 
 
 @app.route("/get_pdf/<source>/<internal_id>")
-def retrieve_pdf(source, internal_id):
+def get_pdf(source, internal_id):
     if source.lower() == "cfsre":
-        q = db.select(CFSREMonograph.pdf_data).filter(CFSREMonograph.internal_id==internal_id)
+        q = db.select(CFSREMonographs.pdf_data).filter(CFSREMonographs.internal_id==internal_id)
     elif source == "Environmental Chemistry Methods":
         q = db.select(ECMMethods.pdf_data).filter(ECMMethods.internal_id==internal_id)
     elif source == "Scientific Working Group":
-        q = db.select(SWGMonograph.pdf_data).filter(SWGMonograph.internal_id==internal_id)
+        q = db.select(SWGMonographs.pdf_data).filter(SWGMonographs.internal_id==internal_id)
     elif source == "Agilent":
         q = db.select(AgilentMethods.pdf_data).filter(AgilentMethods.internal_id==internal_id)
     else:
-        return "Error: Invalid PDF source."
+        q = db.select(OtherMethodsMethods.pdf_data).filter(OtherMethodsMethods.internal_id==internal_id)
     
     data_row = db.session.execute(q).first()
     if data_row is not None:
@@ -462,17 +473,17 @@ def retrieve_pdf(source, internal_id):
     
 
 @app.route("/get_pdf_metadata/<source>/<internal_id>")
-def retrieve_pdf_metadata(source, internal_id):
+def get_pdf_metadata(source, internal_id):
     if source == "Environmental Chemistry Methods":
         q = db.select(ECMMethods.method_metadata, ECMMethods.method_name).filter(ECMMethods.internal_id==internal_id)
     elif source == "Agilent":
         q = db.select(AgilentMethods.method_metadata, AgilentMethods.method_name).filter(AgilentMethods.internal_id==internal_id)
     #elif source == "CFSRE":
-    #    q = db.select(CFSREMonograph.monograph_metadata).filter(CFSREMonograph.internal_id==internal_id)
+    #    q = db.select(CFSREMonographs.monograph_metadata).filter(CFSREMonographs.internal_id==internal_id)
     #elif source == "Scientific Working Group":
-    #    q = db.select(SWGMonograph.pdf_data).filter(SWGMonograph.internal_id==internal_id)
+    #    q = db.select(SWGMonographs.pdf_data).filter(SWGMonographs.internal_id==internal_id)
     else:
-        return "Error: Invalid method source."
+        q = db.select(OtherMethodsMethods.method_metadata, OtherMethodsMethods.method_name).filter(OtherMethodsMethods.internal_id==internal_id)
     
     data_row = db.session.execute(q).first()
     if data_row is not None:
@@ -486,6 +497,7 @@ def retrieve_pdf_metadata(source, internal_id):
             "metadata_rows": metadata_rows
         })
     else:
+        print("Error")
         return "Error: PDF name not found."
     
 
@@ -493,7 +505,7 @@ def retrieve_pdf_metadata(source, internal_id):
 def find_inchikeys(inchikey):
     inchikey_first_block = inchikey[:14]
     all_inchikeys = []
-    for x in [MonaMain, CFSREMain, SpectrabaseMain, MassbankMain, SWGMain, SWGMSMain, ECMMain, AgilentMain]:
+    for x in [MonaMain, CFSREMain, SpectrabaseMain, MassbankMain, SWGMain, SWGMSMain, ECMMain, AgilentMain, OtherMethodsMain]:
         q = db.select(x.inchikey).filter(x.inchikey.like(inchikey_first_block+"%"))
         inchikeys = db.session.execute(q).all()
         inchikeys = [i.inchikey for i in inchikeys]
@@ -507,14 +519,14 @@ def find_inchikeys(inchikey):
 
 @app.route("/find_dtxsids/<source>/<internal_id>")
 def find_dtxsids(source, internal_id):
-    possible_sources = {"scientific working group":SWGMain, "ecm":ECMMain, "cfsre":CFSREMain, "agilent":AgilentMain}
+    possible_sources = {"scientific working group":SWGMain, "environmental chemistry methods":ECMMain, "cfsre":CFSREMain, "agilent":AgilentMain, "other":OtherMethodsMain}
     if source.lower() in possible_sources.keys():
         target_db = possible_sources[source.lower()]
         q = db.select(target_db.dtxsid).filter(target_db.internal_id==internal_id)
         dtxsids = db.session.execute(q).all()
         if len(dtxsids) > 0:
             dtxsids = [d[0] for d in dtxsids]
-            q2 = db.select(IDTable.dtxsid, IDTable.preferred_name).filter(IDTable.dtxsid.in_(dtxsids))
+            q2 = db.select(IDTable.dtxsid, IDTable.casrn, IDTable.preferred_name).filter(IDTable.dtxsid.in_(dtxsids))
             chemical_ids = db.session.execute(q2).all()
             print(chemical_ids)
             return jsonify({"chemical_ids":[c._asdict() for c in chemical_ids]})

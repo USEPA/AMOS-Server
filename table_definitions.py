@@ -1,3 +1,13 @@
+"""
+Gregory Janesch
+
+Description: This file contains the definitions of all of the SQLite database
+tables that are used in the app.  Each database has a bind key to go with it --
+the default key is currently reserved for a unified database that is currently
+not being created.  There is a database for each data source and one for the ID
+tables.
+"""
+
 from flask_sqlalchemy import SQLAlchemy
 
 
@@ -58,9 +68,8 @@ class CFSREMain(db.Model):
 class CFSREAdditionalInfo(db.Model):
     __tablename__ = "cfsre_additional_info"
     __bind_key__ = "cfsre"
-    dummy_id = db.Column(db.Integer, primary_key=True)
-    internal_id = db.Column(db.Text)
-    spectrum_type = db.Column(db.Text)
+    internal_id = db.Column(db.Text, primary_key=True)
+    spectrum_type = db.Column(db.Text, primary_key=True)
     source = db.Column(db.Text)
     link = db.Column(db.Text)
     experimental = db.Column(db.Boolean)
@@ -68,13 +77,15 @@ class CFSREAdditionalInfo(db.Model):
     data_type = db.Column(db.Text)
 
 
-class CFSREMonograph(db.Model):
+class CFSREMonographs(db.Model):
     __tablename__ = "cfsre_monographs"
     __bind_key__ = "cfsre"
-    dummy_id = db.Column(db.Integer, primary_key=True)
-    internal_id = db.Column(db.Text)
+    internal_id = db.Column(db.Text, primary_key=True)
     pdf_data = db.Column(db.LargeBinary)
-    pdf_exists = db.Column(db.Boolean)
+    year_published = db.Column(db.Integer)
+    monograph_metadata = db.Column(db.Text)
+    monograph_name = db.Column(db.Text)
+    sub_source = db.Column(db.Text)
 
 #######################################################################
 ########## TABLES FOR SPECTRABASE #####################################
@@ -149,9 +160,9 @@ class SWGMain(db.Model):
     __bind_key__ = "swg_mono"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text)
-    cas_number = db.Column(db.Text)  #missing
-    dtxsid = db.Column(db.Text)  #missing
-    inchikey = db.Column(db.String(27))  #missing
+    cas_number = db.Column(db.Text)
+    dtxsid = db.Column(db.Text)
+    inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
 
 
@@ -159,7 +170,7 @@ class SWGAdditionalInfo(db.Model):
     __tablename__ = "swg_additional_info"
     __bind_key__ = "swg_mono"
     internal_id = db.Column(db.Text, primary_key=True)
-    spectrum_type = db.Column(db.Text)  #missing
+    spectrum_type = db.Column(db.Text)
     source = db.Column(db.Text)
     link = db.Column(db.Text)
     experimental = db.Column(db.Boolean)
@@ -167,12 +178,15 @@ class SWGAdditionalInfo(db.Model):
     data_type = db.Column(db.Text)
 
 
-class SWGMonograph(db.Model):
+class SWGMonographs(db.Model):
     __tablename__ = "swg_monographs"
     __bind_key__ = "swg_mono"
     internal_id = db.Column(db.Text, primary_key=True)
     pdf_data = db.Column(db.LargeBinary)
-    pdf_exists = db.Column(db.Boolean)
+    year_published = db.Column(db.Integer)
+    monograph_metadata = db.Column(db.Text)
+    monograph_name = db.Column(db.Text)
+    sub_source = db.Column(db.Text)
 
 
 #######################################################################
@@ -185,8 +199,8 @@ class SWGMSMain(db.Model):
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text)
     cas_number = db.Column(db.Text)
-    dtxsid = db.Column(db.Text)  #missing
-    inchikey = db.Column(db.String(27))  #missing
+    dtxsid = db.Column(db.Text)
+    inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
 
 
@@ -194,7 +208,7 @@ class SWGMSAdditionalInfo(db.Model):
     __tablename__ = "swg_ms_additional_info"
     __bind_key__ = "swg_ms"
     internal_id = db.Column(db.Text, primary_key=True)
-    spectrum_type = db.Column(db.Text)  #missing
+    spectrum_type = db.Column(db.Text)
     source = db.Column(db.Text)
     link = db.Column(db.Text)
     experimental = db.Column(db.Boolean)
@@ -206,10 +220,10 @@ class SWGMSSpectra(db.Model):
     __tablename__ = "swg_ms_spectra"
     __bind_key__ = "swg_ms"
     internal_id = db.Column(db.Text, primary_key=True)
-    splash = db.Column(db.Text)  #missing
+    splash = db.Column(db.Text)
     spectrum = db.Column(db.Text)
-    spectral_entropy = db.Column(db.Float)  #missing
-    normalized_entropy = db.Column(db.Float)  #missing
+    spectral_entropy = db.Column(db.Float)
+    normalized_entropy = db.Column(db.Float)
 
 
 #######################################################################
@@ -221,9 +235,9 @@ class ECMMain(db.Model):
     __bind_key__ = "ecm"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text, primary_key=True)
-    cas_number = db.Column(db.Text)  #missing
-    dtxsid = db.Column(db.Text)  #missing
-    inchikey = db.Column(db.String(27))  #missing
+    cas_number = db.Column(db.Text)
+    dtxsid = db.Column(db.Text)
+    inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
 
 
@@ -231,7 +245,7 @@ class ECMAdditionalInfo(db.Model):
     __tablename__ = "ecm_additional_info"
     __bind_key__ = "ecm"
     internal_id = db.Column(db.Text, primary_key=True)
-    spectrum_type = db.Column(db.Text)  #missing
+    spectrum_type = db.Column(db.Text)
     source = db.Column(db.Text)
     link = db.Column(db.Text)
     experimental = db.Column(db.Boolean)
@@ -259,9 +273,9 @@ class AgilentMain(db.Model):
     __bind_key__ = "agilent"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text)
-    cas_number = db.Column(db.Text)  #missing
-    dtxsid = db.Column(db.Text, primary_key=True)  #missing
-    inchikey = db.Column(db.String(27))  #missing
+    cas_number = db.Column(db.Text)
+    dtxsid = db.Column(db.Text, primary_key=True)
+    inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
 
 
@@ -280,6 +294,45 @@ class AgilentAdditionalInfo(db.Model):
 class AgilentMethods(db.Model):
     __tablename__ = "agilent_methods"
     __bind_key__ = "agilent"
+    internal_id = db.Column(db.Text, primary_key=True)
+    pdf_data = db.Column(db.LargeBinary)
+    method_name = db.Column(db.Text)
+    internal_only = db.Column(db.Boolean)
+    year_published = db.Column(db.Integer)
+    method_metadata = db.Column(db.Text)
+
+
+
+#######################################################################
+########## TABLES FOR OTHER METHODS ###################################
+#######################################################################
+
+class OtherMethodsMain(db.Model):
+    __tablename__ = "other_methods_main"
+    __bind_key__ = "other_methods"
+    internal_id = db.Column(db.Text, primary_key=True)
+    name = db.Column(db.Text)
+    cas_number = db.Column(db.Text)
+    dtxsid = db.Column(db.Text, primary_key=True)
+    inchikey = db.Column(db.String(27))
+    record_type = db.Column(db.Text)
+
+
+class OtherMethodsAdditionalInfo(db.Model):
+    __tablename__ = "other_methods_additional_info"
+    __bind_key__ = "other_methods"
+    internal_id = db.Column(db.Text, primary_key=True)
+    spectrum_type = db.Column(db.Text)
+    source = db.Column(db.Text)
+    link = db.Column(db.Text)
+    experimental = db.Column(db.Boolean)
+    comment = db.Column(db.Text)
+    data_type = db.Column(db.Text)
+
+
+class OtherMethodsMethods(db.Model):
+    __tablename__ = "other_methods_methods"
+    __bind_key__ = "other_methods"
     internal_id = db.Column(db.Text, primary_key=True)
     pdf_data = db.Column(db.LargeBinary)
     method_name = db.Column(db.Text)
