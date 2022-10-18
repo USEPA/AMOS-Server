@@ -2,8 +2,8 @@
 FROM ubuntu:20.04
 
 # Put source code in docker container
-WORKDIR app
-COPY . app
+WORKDIR /app
+COPY . /app
 
 #Need python3.9 to run random forest using multicores...
 RUN apt-get update
