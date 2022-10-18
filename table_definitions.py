@@ -259,7 +259,7 @@ class ECMMethods(db.Model):
     internal_id = db.Column(db.Text, primary_key=True)
     pdf_data = db.Column(db.LargeBinary)
     method_name = db.Column(db.Text)
-    internal_only = db.Column(db.Boolean)
+    external_use_allowed = db.Column(db.Boolean)
     year_published = db.Column(db.Integer)
     method_metadata = db.Column(db.Text)
 
@@ -297,7 +297,7 @@ class AgilentMethods(db.Model):
     internal_id = db.Column(db.Text, primary_key=True)
     pdf_data = db.Column(db.LargeBinary)
     method_name = db.Column(db.Text)
-    internal_only = db.Column(db.Boolean)
+    external_use_allowed = db.Column(db.Boolean)
     year_published = db.Column(db.Integer)
     method_metadata = db.Column(db.Text)
 
@@ -336,7 +336,7 @@ class OtherMethodsMethods(db.Model):
     internal_id = db.Column(db.Text, primary_key=True)
     pdf_data = db.Column(db.LargeBinary)
     method_name = db.Column(db.Text)
-    internal_only = db.Column(db.Boolean)
+    external_use_allowed = db.Column(db.Boolean)
     year_published = db.Column(db.Integer)
     method_metadata = db.Column(db.Text)
 

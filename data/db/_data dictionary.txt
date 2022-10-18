@@ -1,0 +1,48 @@
+The data contained in the databases is broken up into several tables, which store either general information that is pertinent to all records, or more specialized information based on the type of data being stored.
+
+The primary key on all tables is internal_id, except for the main table, where it is a combination of internal_id and dtxsid.
+
+
+
+MAIN TABLE
+This table is what the compound search examines on the Flask backend, and is mostly concerned with information used by the search.  The fields for this table are:
+- internal_id: Unique identifier for each record.  For the most part, these identifiers are either the identifiers used in the original sources' data, or identifiers assigned by EPA curators (the latter generally only applies to methods).  This identifier is used across all tables in the app's databases.
+- name: Name of the compound.  These are standardized to the EPA's preferred names as much as possible.
+- cas_number: Chemical Abstracts Service Registry Number.
+- dtxsid: Substance ID used by EPA's DSSTox product.
+- inchikey: InChIKey string corresponding to the compound.  Note that these can be Indigo or JChem InChIKeys, as the former are theoretically preferred but do not exist for some compounds.
+- record_type: The kind of record that this entry represents -- either a spectrum, a monograph, or a method.
+
+The primary key for this table is on both internal_id and dtxsid, as it is possible for monographs and methods to contain information on many individual compounds.
+
+
+
+ADDITIONAL INFO
+This table contains information about records that is not used by the search system, but is shown or otherwise used in the results table.  The fields for this table are:
+- internal_id: Same as above.
+- spectrum_type: A short description of the kind of spectrum represented in the record.  Most values are some variation of "GC-MS", "LC-MS", "IR", "Raman", and so forth.
+- source: The public source which this record was acquired from.
+- link: The URL where the original record can be found.
+- experimental: A boolean flag for whether the spectrum in question is experimentally determined or generated in silico.  As of 2022-10-12, all data in the databases should be experimental.
+- comment: A description of the record.  Exact content varies by record type -- spectra typically have some description of the spectrum and/or the equipment that generated it, while monographs and methods typically have abstracts or other summaries.
+- data_type: Description of the type of data that the record is stored as.  Typically either "spectrum" (see the "SPECTRA" table), "pdf" (PDF file stored in the databases), or NULL (no data stored).
+
+
+
+SPECTRA
+This data contains information specific to mass spectra stored in the database.  Fields:
+- internal_id: Same as above.
+- SPLASH: Spectral Hash Identifier.  See https://splash.fiehnlab.ucdavis.edu/ for more information.
+- spectrum: The spectrum, formatted as a series of space-delimited peaks.  For example, a spectrum with intensities 100 and 60 at m/z values 201.99 and 234.56 would be stored as "201.99:100 234.56:60".  Intensities are standardized to have a maximum value of 100.
+- spectral_entropy: A measurement of the quality of a spectrum, calculated using code based on MoNA's source code.  Will be missing values for spectra with one point (while the formula does actually give a valid value for this case -- zero -- it is not useful, and is stored as missing to be consistent with the normalized entropy below).
+- normalized_entropy: A measurement of the quality of a spectrum.  It is a scaling of the spectral entropy to try to offset the effects of having a large number of peaks in the data.
+
+
+
+MONOGRAPHS/METHODS
+These tables contain information specific to monographs and methods stored in the database.  They are lumped together here since, as of 2022-10-12, both tables have functionally the same fields, and are separated as much for organizational issues as technical ones.  Fields:
+- internal_id: Same as above.
+- pdf_data: The PDF file, stored as binary data.
+- year_published: Year that the monograph/method was published.
+- monograph_metadata/method_metadata: A formatted string containing fields and metadata describing the monograph/method.  The exact fields vary by source.  May have some overlap with the "comment" field in the main table.
+- sub_source: Some sources -- the ones for the monographs, in particular -- have collected at least some of their documents from other sources.  This field is used to denote that original source.

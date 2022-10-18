@@ -4,8 +4,9 @@ import io
 import re
 from time import time
 
-from flask import Flask, jsonify, request, send_file, make_response
+from flask import Flask, jsonify, send_file, make_response
 from flask_cors import CORS
+import requests
 
 from table_definitions import db, MonaMain, MonaAdditionalInfo, MonaSpectra, \
     CFSREMain, CFSREAdditionalInfo, CFSREMonographs, \
@@ -366,29 +367,23 @@ def monograph_list():
 
     ## info for CFSRE monographs
     q = db.select(CFSREMonographs.internal_id, CFSREMonographs.monograph_name, CFSREMonographs.year_published, CFSREMonographs.sub_source)
-    print("CFSRE START QUERY: ", strftime("%H:%M:%S", gmtime()))
     results = db.session.execute(q).all()
-    print("CFSRE QUERY RETURNED: ", strftime("%H:%M:%S", gmtime()))
     cfsre_filenames = [p.internal_id[:-4] for p in results]
     cfsre_monograph_info = []
     for r, fn in zip(results, cfsre_filenames):
         cfsre_monograph_info.append({"name":r.monograph_name, "year_published":r.year_published, "info_source":r.sub_source, "filename":fn, "source":"CFSRE", "internal_id":r.internal_id})
     filenames.extend(cfsre_filenames)
     monograph_info.extend(cfsre_monograph_info)
-    print("CFSRE DONE: ", strftime("%H:%M:%S", gmtime()))
 
     ## info for SWG monographs
     q = db.select(SWGMonographs.internal_id, SWGMonographs.monograph_name, SWGMonographs.year_published, SWGMonographs.sub_source)
-    print("SWG START QUERY: ", strftime("%H:%M:%S", gmtime()))
     results = db.session.execute(q).all()
-    print("SWG QUERY FINISHED: ", strftime("%H:%M:%S", gmtime()))
     swg_filenames = [p.internal_id[:-4] for p in results]
     swg_monograph_info = []
     for r, fn in zip(results, swg_filenames):
         swg_monograph_info.append({"name":r.monograph_name, "year_published":r.year_published, "info_source":r.sub_source, "filename":fn, "source":"Scientific Working Group", "internal_id":r.internal_id})
     filenames.extend(swg_filenames)
     monograph_info.extend(swg_monograph_info)
-    print("SWG DONE: ", strftime("%H:%M:%S", gmtime()))
     
     return jsonify({"names": filenames, "monograph_info": monograph_info})
 
@@ -460,6 +455,7 @@ def get_pdf(source, internal_id):
     else:
         q = db.select(OtherMethodsMethods.pdf_data).filter(OtherMethodsMethods.internal_id==internal_id)
     
+    print(q)
     data_row = db.session.execute(q).first()
     if data_row is not None:
         pdf_content = data_row.pdf_data
@@ -510,7 +506,6 @@ def find_inchikeys(inchikey):
         inchikeys = [i.inchikey for i in inchikeys]
         all_inchikeys.extend(inchikeys)
     unique_inchikeys = set(all_inchikeys)
-    print(unique_inchikeys)
     return jsonify({
         "inchikey_present": inchikey in unique_inchikeys,
         "unique_inchikeys": sorted(list(unique_inchikeys))
@@ -518,7 +513,13 @@ def find_inchikeys(inchikey):
 
 @app.route("/find_dtxsids/<source>/<internal_id>")
 def find_dtxsids(source, internal_id):
-    possible_sources = {"scientific working group":SWGMain, "environmental chemistry methods":ECMMain, "cfsre":CFSREMain, "agilent":AgilentMain, "other":OtherMethodsMain}
+    possible_sources = {
+        "scientific working group":SWGMain,
+        "environmental chemistry methods":ECMMain,
+        "cfsre":CFSREMain,
+        "agilent":AgilentMain,
+        "other":OtherMethodsMain
+    }
     if source.lower() in possible_sources.keys():
         target_db = possible_sources[source.lower()]
         q = db.select(target_db.dtxsid).filter(target_db.internal_id==internal_id)
@@ -527,13 +528,53 @@ def find_dtxsids(source, internal_id):
             dtxsids = [d[0] for d in dtxsids]
             q2 = db.select(IDTable.dtxsid, IDTable.casrn, IDTable.preferred_name).filter(IDTable.dtxsid.in_(dtxsids))
             chemical_ids = db.session.execute(q2).all()
-            print(chemical_ids)
             return jsonify({"chemical_ids":[c._asdict() for c in chemical_ids]})
         else:
             return f"Unknown error -- no DTXSIDs found for internal ID {internal_id} from source {source}"
     else:
         return f"Unidentified source '{source}'"
+
+@app.route("/compound_similarity_search/<dtxsid>")
+def find_similar_compounds(dtxsid, similarity_threshold=0.8):
+    # Note: compound lists returned by this are sorted in decreasing order of
+    # similarity, but the order of elements with the same similarity doesn't
+    # appear to be guaranteed.
+    if not re.match("^DTXSID[0-9]*$", dtxsid):
+        return "Error: not a valid DTXSID."
     
+    BASE_URL = "https://ccte-api-ccd-dev.epa.gov/similar-compound/by-dtxsid/"
+    response = requests.get(f"{BASE_URL}{dtxsid}/{similarity_threshold}")
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print("Error: ", response.status_code)
+        return {}
+
+
+@app.route("/get_similar_methods/<dtxsid>")
+def get_similar_methods(dtxsid):
+    similar_compounds_json = find_similar_compounds(dtxsid)
+    print(similar_compounds_json)
+    similar_dtxsids = [sc["dtxsid"] for sc in similar_compounds_json]
+    similarity_dict = {sc["dtxsid"]: sc["similarity"] for sc in similar_compounds_json}
+    # add the actual DTXSID for now -- the case where there are methods for the DTXSID will likely be changed down the road
+    similar_dtxsids.append(dtxsid)
+    similarity_dict[dtxsid] = 1 
+    # select all methods which have a dtxsid that is in the list
+    # select all from main where dtxsid is in the list
+    # desired fields: method name, source, year, similarity, dtxsid/compound name
+    results = []
+    table_tuples = [(ECMMain, ECMAdditionalInfo, ECMMethods), (AgilentMain, AgilentAdditionalInfo, AgilentMethods), (OtherMethodsMain, OtherMethodsAdditionalInfo, OtherMethodsMethods)]
+    for search_table, additional_info, method_table in table_tuples:
+        q = db.select(
+                search_table.internal_id, search_table.dtxsid, additional_info.source,
+                method_table.method_name, method_table.year_published
+            ).filter(search_table.dtxsid.in_(similar_dtxsids)).join_from(search_table, additional_info, search_table.internal_id==additional_info.internal_id).join_from(search_table, method_table, search_table.internal_id==method_table.internal_id)
+        similar_methods = [c._asdict() for c in db.session.execute(q).all()]
+        results.extend(similar_methods)
+    results = [{**r, "similarity": similarity_dict[r["dtxsid"]]} for r in results]
+    return jsonify({"results":results})
+
 if __name__ == "__main__":
     db.init_app(app)
     app.run(host='0.0.0.0', port=5000)
