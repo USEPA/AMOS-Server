@@ -95,6 +95,13 @@ def search_results(search_term):
     results = []
     for r in [mona_results, spectrabase_results, cfsre_results, massbank_results, swg_mono_results, swg_ms_results, ecm_results, agilent_results, other_methods_results]:
         results.extend(r)
+    
+    result_record_types = [r["record_type"] for r in results]
+    result_record_type_counts = Counter(result_record_types)
+    for record_type in ["Method", "Monograph", "Spectrum"]:
+        if record_type not in result_record_type_counts:
+            result_record_type_counts[record_type] = 0
+    result_record_type_counts = {k.lower(): v for k,v in result_record_type_counts.items()}
 
     dtxsids = [r["dtxsid"] for r in results if r["dtxsid"] is not None]
     if dtxsids:
@@ -120,7 +127,8 @@ def search_results(search_term):
     return jsonify({"search_term": search_term,
                     "search_type": search_type.name,
                     "results": results,
-                    "id_info":id_info})
+                    "id_info": id_info,
+                    "record_type_counts":result_record_type_counts})
 
 
 def determine_search_type(search_term):
@@ -151,7 +159,7 @@ def determine_search_type(search_term):
 
 
 def mona_search(search_type, search_value):
-    q = db.select(MonaMain.dtxsid,MonaMain.name, MonaMain.cas_number, MonaMain.inchikey,
+    q = db.select(MonaMain.dtxsid,MonaMain.name, MonaMain.casrn, MonaMain.inchikey,
                   MonaAdditionalInfo.spectrum_type, MonaAdditionalInfo.source, 
                   MonaAdditionalInfo.internal_id, MonaAdditionalInfo.link, MonaMain.record_type,
                   MonaAdditionalInfo.data_type, MonaAdditionalInfo.comment)
@@ -159,7 +167,7 @@ def mona_search(search_type, search_value):
     if search_type == SearchType.InChIKey:
         q = q.filter(MonaMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(MonaMain.cas_number==search_value)
+        q = q.filter(MonaMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
         q = q.filter(MonaMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
@@ -174,7 +182,7 @@ def mona_search(search_type, search_value):
 
 
 def spectrabase_search(search_type, search_value):
-    q = db.select(SpectrabaseMain.dtxsid, SpectrabaseMain.name, SpectrabaseMain.cas_number, SpectrabaseMain.inchikey,
+    q = db.select(SpectrabaseMain.dtxsid, SpectrabaseMain.name, SpectrabaseMain.casrn, SpectrabaseMain.inchikey,
                   SpectrabaseAdditionalInfo.spectrum_type, SpectrabaseAdditionalInfo.source, 
                   SpectrabaseAdditionalInfo.internal_id, SpectrabaseAdditionalInfo.link, SpectrabaseMain.record_type,
                   SpectrabaseAdditionalInfo.data_type, SpectrabaseAdditionalInfo.comment)
@@ -184,7 +192,7 @@ def spectrabase_search(search_type, search_value):
     if search_type == SearchType.InChIKey:
         q = q.filter(SpectrabaseMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(SpectrabaseMain.cas_number==search_value)
+        q = q.filter(SpectrabaseMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
         q = q.filter(SpectrabaseMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
@@ -199,7 +207,7 @@ def spectrabase_search(search_type, search_value):
 
 
 def cfsre_search(search_type, search_value):
-    q = db.select(CFSREMain.dtxsid, CFSREMain.name, CFSREMain.cas_number, CFSREMain.inchikey,
+    q = db.select(CFSREMain.dtxsid, CFSREMain.name, CFSREMain.casrn, CFSREMain.inchikey,
                   CFSREAdditionalInfo.spectrum_type, CFSREAdditionalInfo.source, 
                   CFSREAdditionalInfo.internal_id, CFSREAdditionalInfo.link, CFSREMain.record_type,
                   CFSREAdditionalInfo.data_type, CFSREAdditionalInfo.comment)
@@ -207,7 +215,7 @@ def cfsre_search(search_type, search_value):
     if search_type == SearchType.InChIKey:
         q = q.filter(CFSREMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(CFSREMain.cas_number==search_value)
+        q = q.filter(CFSREMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
         q = q.filter(CFSREMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
@@ -222,7 +230,7 @@ def cfsre_search(search_type, search_value):
 
 
 def massbank_search(search_type, search_value):
-    q = db.select(MassbankMain.dtxsid, MassbankMain.name, MassbankMain.cas_number, MassbankMain.inchikey,
+    q = db.select(MassbankMain.dtxsid, MassbankMain.name, MassbankMain.casrn, MassbankMain.inchikey,
                   MassbankAdditionalInfo.spectrum_type, MassbankAdditionalInfo.source, 
                   MassbankAdditionalInfo.internal_id, MassbankAdditionalInfo.link, MassbankMain.record_type,
                   MassbankAdditionalInfo.data_type, MassbankAdditionalInfo.comment)
@@ -230,7 +238,7 @@ def massbank_search(search_type, search_value):
     if search_type == SearchType.InChIKey:
         q = q.filter(MassbankMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(MassbankMain.cas_number==search_value)
+        q = q.filter(MassbankMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
         q = q.filter(MassbankMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
@@ -245,7 +253,7 @@ def massbank_search(search_type, search_value):
 
 
 def swg_ms_search(search_type, search_value):
-    q = db.select(SWGMSMain.dtxsid, SWGMSMain.name, SWGMSMain.cas_number, SWGMSMain.inchikey,
+    q = db.select(SWGMSMain.dtxsid, SWGMSMain.name, SWGMSMain.casrn, SWGMSMain.inchikey,
                   SWGMSAdditionalInfo.spectrum_type, SWGMSAdditionalInfo.source, 
                   SWGMSAdditionalInfo.internal_id, SWGMSAdditionalInfo.link, SWGMSMain.record_type,
                   SWGMSAdditionalInfo.data_type, SWGMSAdditionalInfo.comment)
@@ -253,7 +261,7 @@ def swg_ms_search(search_type, search_value):
     if search_type == SearchType.InChIKey:
         q = q.filter(SWGMSMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(SWGMSMain.cas_number==search_value)
+        q = q.filter(SWGMSMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
         q = q.filter(SWGMSMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
@@ -268,7 +276,7 @@ def swg_ms_search(search_type, search_value):
 
 
 def swg_monograph_search(search_type, search_value):
-    q = db.select(SWGMain.dtxsid, SWGMain.name, SWGMain.cas_number, SWGMain.inchikey,
+    q = db.select(SWGMain.dtxsid, SWGMain.name, SWGMain.casrn, SWGMain.inchikey,
                   SWGAdditionalInfo.spectrum_type, SWGAdditionalInfo.source, 
                   SWGAdditionalInfo.internal_id, SWGAdditionalInfo.link, SWGMain.record_type,
                   SWGAdditionalInfo.data_type, SWGAdditionalInfo.comment)
@@ -276,7 +284,7 @@ def swg_monograph_search(search_type, search_value):
     if search_type == SearchType.InChIKey:
         q = q.filter(SWGMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(SWGMain.cas_number==search_value)
+        q = q.filter(SWGMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
         q = q.filter(SWGMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
@@ -291,7 +299,7 @@ def swg_monograph_search(search_type, search_value):
 
 
 def ecm_search(search_type, search_value):
-    q = db.select(ECMMain.dtxsid, ECMMain.name, ECMMain.cas_number, ECMMain.inchikey,
+    q = db.select(ECMMain.dtxsid, ECMMain.name, ECMMain.casrn, ECMMain.inchikey,
                   ECMAdditionalInfo.spectrum_type, ECMAdditionalInfo.source, 
                   ECMAdditionalInfo.internal_id, ECMAdditionalInfo.link, ECMMain.record_type,
                   ECMAdditionalInfo.data_type, ECMAdditionalInfo.comment)
@@ -299,7 +307,7 @@ def ecm_search(search_type, search_value):
     if search_type == SearchType.InChIKey:
         q = q.filter(ECMMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(ECMMain.cas_number==search_value)
+        q = q.filter(ECMMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
         q = q.filter(ECMMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
@@ -313,7 +321,7 @@ def ecm_search(search_type, search_value):
 
 
 def agilent_search(search_type, search_value):
-    q = db.select(AgilentMain.dtxsid, AgilentMain.name, AgilentMain.cas_number, AgilentMain.inchikey,
+    q = db.select(AgilentMain.dtxsid, AgilentMain.name, AgilentMain.casrn, AgilentMain.inchikey,
                   AgilentAdditionalInfo.spectrum_type, AgilentAdditionalInfo.source, 
                   AgilentAdditionalInfo.internal_id, AgilentAdditionalInfo.link, AgilentMain.record_type,
                   AgilentAdditionalInfo.data_type, AgilentAdditionalInfo.comment)
@@ -321,7 +329,7 @@ def agilent_search(search_type, search_value):
     if search_type == SearchType.InChIKey:
         q = q.filter(AgilentMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(AgilentMain.cas_number==search_value)
+        q = q.filter(AgilentMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
         q = q.filter(AgilentMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
@@ -334,7 +342,7 @@ def agilent_search(search_type, search_value):
     return [r._asdict() for r in results]
 
 def other_methods_search(search_type, search_value):
-    q = db.select(OtherMethodsMain.dtxsid, OtherMethodsMain.name, OtherMethodsMain.cas_number, OtherMethodsMain.inchikey,
+    q = db.select(OtherMethodsMain.dtxsid, OtherMethodsMain.name, OtherMethodsMain.casrn, OtherMethodsMain.inchikey,
                   OtherMethodsAdditionalInfo.spectrum_type, OtherMethodsAdditionalInfo.source, 
                   OtherMethodsAdditionalInfo.internal_id, OtherMethodsAdditionalInfo.link, OtherMethodsMain.record_type,
                   OtherMethodsAdditionalInfo.data_type, OtherMethodsAdditionalInfo.comment)
@@ -342,7 +350,7 @@ def other_methods_search(search_type, search_value):
     if search_type == SearchType.InChIKey:
         q = q.filter(OtherMethodsMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(OtherMethodsMain.cas_number==search_value)
+        q = q.filter(OtherMethodsMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
         q = q.filter(OtherMethodsMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:

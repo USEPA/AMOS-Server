@@ -22,7 +22,7 @@ class MonaMain(db.Model):
     __bind_key__ = "mona"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text)
-    cas_number = db.Column(db.Text)
+    casrn = db.Column(db.Text)
     dtxsid = db.Column(db.Text)
     inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
@@ -59,7 +59,7 @@ class CFSREMain(db.Model):
     __bind_key__ = "cfsre"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text)
-    cas_number = db.Column(db.Text)
+    casrn = db.Column(db.Text)
     dtxsid = db.Column(db.Text, primary_key=True)
     inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
@@ -96,7 +96,7 @@ class SpectrabaseMain(db.Model):
     __bind_key__ = "spectrabase"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text)
-    cas_number = db.Column(db.Text)
+    casrn = db.Column(db.Text)
     dtxsid = db.Column(db.Text)
     inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
@@ -123,7 +123,7 @@ class MassbankMain(db.Model):
     __bind_key__ = "massbank"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.String(27))
-    cas_number = db.Column(db.Text)
+    casrn = db.Column(db.Text)
     dtxsid = db.Column(db.Text)
     inchikey = db.Column(db.Text)
     record_type = db.Column(db.Text)
@@ -160,7 +160,7 @@ class SWGMain(db.Model):
     __bind_key__ = "swg_mono"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text)
-    cas_number = db.Column(db.Text)
+    casrn = db.Column(db.Text)
     dtxsid = db.Column(db.Text)
     inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
@@ -198,7 +198,7 @@ class SWGMSMain(db.Model):
     __bind_key__ = "swg_ms"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text)
-    cas_number = db.Column(db.Text)
+    casrn = db.Column(db.Text)
     dtxsid = db.Column(db.Text)
     inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
@@ -235,7 +235,7 @@ class ECMMain(db.Model):
     __bind_key__ = "ecm"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text, primary_key=True)
-    cas_number = db.Column(db.Text)
+    casrn = db.Column(db.Text)
     dtxsid = db.Column(db.Text)
     inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
@@ -273,7 +273,7 @@ class AgilentMain(db.Model):
     __bind_key__ = "agilent"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text)
-    cas_number = db.Column(db.Text)
+    casrn = db.Column(db.Text)
     dtxsid = db.Column(db.Text, primary_key=True)
     inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
@@ -312,7 +312,7 @@ class OtherMethodsMain(db.Model):
     __bind_key__ = "other_methods"
     internal_id = db.Column(db.Text, primary_key=True)
     name = db.Column(db.Text)
-    cas_number = db.Column(db.Text)
+    casrn = db.Column(db.Text)
     dtxsid = db.Column(db.Text, primary_key=True)
     inchikey = db.Column(db.String(27))
     record_type = db.Column(db.Text)
