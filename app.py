@@ -481,22 +481,27 @@ def get_pdf_metadata(source, internal_id):
         q = db.select(ECMMethods.method_metadata, ECMMethods.method_name).filter(ECMMethods.internal_id==internal_id)
     elif source == "Agilent":
         q = db.select(AgilentMethods.method_metadata, AgilentMethods.method_name).filter(AgilentMethods.internal_id==internal_id)
-    #elif source == "CFSRE":
-    #    q = db.select(CFSREMonographs.monograph_metadata).filter(CFSREMonographs.internal_id==internal_id)
-    #elif source == "Scientific Working Group":
-    #    q = db.select(SWGMonographs.pdf_data).filter(SWGMonographs.internal_id==internal_id)
+    elif source == "CFSRE":
+        q = db.select(CFSREMonographs.monograph_metadata, CFSREMonographs.monograph_name).filter(CFSREMonographs.internal_id==internal_id)
+    elif source == "Scientific Working Group":
+        q = db.select(SWGMonographs.monograph_metadata, SWGMonographs.monograph_name).filter(SWGMonographs.internal_id==internal_id)
     else:
         q = db.select(OtherMethodsMethods.method_metadata, OtherMethodsMethods.method_name).filter(OtherMethodsMethods.internal_id==internal_id)
     
     data_row = db.session.execute(q).first()
     if data_row is not None:
-        method_metadata = data_row.method_metadata
-        metadata_entries = method_metadata.split(";;")
+        if source in ["CFSRE", "Scientific Working Group"]:
+            pdf_metadata = data_row.monograph_metadata
+            pdf_name = data_row.monograph_name
+        else:
+            pdf_metadata = data_row.method_metadata
+            pdf_name = data_row.method_name
+        print(data_row)
+        print(f"PDF metadata: {pdf_metadata}")
+        metadata_entries = pdf_metadata.split(";;")
         metadata_rows = [[x.split("::")[0], x.split("::")[1]] for x in metadata_entries]
-        method_name = data_row.method_name
         return jsonify({
-            "pdf_metadata": method_metadata,
-            "pdf_name": method_name,
+            "pdf_name": pdf_name,
             "metadata_rows": metadata_rows
         })
     else:
