@@ -262,6 +262,9 @@ class ECMMethods(db.Model):
     external_use_allowed = db.Column(db.Boolean)
     year_published = db.Column(db.Integer)
     method_metadata = db.Column(db.Text)
+    method_number = db.Column(db.Text)
+    analyte = db.Column(db.Text)
+    matrix = db.Column(db.Text)
 
 
 #######################################################################
@@ -300,6 +303,9 @@ class AgilentMethods(db.Model):
     external_use_allowed = db.Column(db.Boolean)
     year_published = db.Column(db.Integer)
     method_metadata = db.Column(db.Text)
+    method_number = db.Column(db.Text)
+    analyte = db.Column(db.Text)
+    matrix = db.Column(db.Text)
 
 
 
@@ -339,7 +345,9 @@ class OtherMethodsMethods(db.Model):
     external_use_allowed = db.Column(db.Boolean)
     year_published = db.Column(db.Integer)
     method_metadata = db.Column(db.Text)
-
+    method_number = db.Column(db.Text)
+    analyte = db.Column(db.Text)
+    matrix = db.Column(db.Text)
 
 
 #######################################################################
@@ -356,3 +364,9 @@ class IDTable(db.Model):
     preferred_name = db.Column(db.Text)
     molecular_formula = db.Column(db.Text)
     molecular_weight = db.Column(db.Float)
+
+class Synonyms(db.Model):
+    __tablename__ = "synonyms"
+    #__bind_key__ = "master_db"
+    synonym = db.Column(db.Text, primary_key=True)
+    dtxsid = db.Column(db.Text)

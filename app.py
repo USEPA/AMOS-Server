@@ -17,7 +17,7 @@ from table_definitions import db, MonaMain, MonaAdditionalInfo, MonaSpectra, \
     ECMMain, ECMAdditionalInfo, ECMMethods, \
     AgilentMain, AgilentAdditionalInfo, AgilentMethods, \
     OtherMethodsMain, OtherMethodsAdditionalInfo, OtherMethodsMethods, \
-    IDTable
+    IDTable, Synonyms
 
 DB_DIRECTORY = "./data/db/"
 MONA_DB = DB_DIRECTORY + "mona.db"
@@ -159,206 +159,294 @@ def determine_search_type(search_term):
 
 
 def mona_search(search_type, search_value):
-    q = db.select(MonaMain.dtxsid,MonaMain.name, MonaMain.casrn, MonaMain.inchikey,
-                  MonaAdditionalInfo.spectrum_type, MonaAdditionalInfo.source, 
-                  MonaAdditionalInfo.internal_id, MonaAdditionalInfo.link, MonaMain.record_type,
-                  MonaAdditionalInfo.data_type, MonaAdditionalInfo.comment)
+    base_q = db.select(MonaMain.dtxsid,MonaMain.name, MonaMain.casrn, MonaMain.inchikey,
+                       MonaAdditionalInfo.spectrum_type, MonaAdditionalInfo.source, 
+                       MonaAdditionalInfo.internal_id, MonaAdditionalInfo.link, MonaMain.record_type,
+                       MonaAdditionalInfo.data_type, MonaAdditionalInfo.comment)
+
+    base_q = base_q.filter(MonaMain.dtxsid != None)
     
     if search_type == SearchType.InChIKey:
-        q = q.filter(MonaMain.inchikey == search_value)
+        q = base_q.filter(MonaMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(MonaMain.casrn==search_value)
+        q = base_q.filter(MonaMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
-        q = q.filter(MonaMain.name.ilike(search_value))
+        q = base_q.filter(MonaMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
-        q = q.filter(MonaMain.dtxsid==search_value)
+        q = base_q.filter(MonaMain.dtxsid==search_value)
     
     q = q.join_from(MonaMain, MonaAdditionalInfo,
                     MonaMain.internal_id==MonaAdditionalInfo.internal_id)
     
     results = db.session.execute(q).all()
+
+    if (len(results) == 0) and (search_type == SearchType.CompoundName):
+        q2 = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_value))
+        synonym_results = db.session.execute(q2).all()
+        if len(synonym_results) > 0:
+            synonym_dtxsid = synonym_results[0].dtxsid
+            q_syn = base_q.filter(MonaMain.dtxsid==synonym_dtxsid).join_from(MonaMain, MonaAdditionalInfo,
+                    MonaMain.internal_id==MonaAdditionalInfo.internal_id)
+            results = db.session.execute(q_syn).all()
+
     
     return [r._asdict() for r in results]
 
 
 def spectrabase_search(search_type, search_value):
-    q = db.select(SpectrabaseMain.dtxsid, SpectrabaseMain.name, SpectrabaseMain.casrn, SpectrabaseMain.inchikey,
-                  SpectrabaseAdditionalInfo.spectrum_type, SpectrabaseAdditionalInfo.source, 
-                  SpectrabaseAdditionalInfo.internal_id, SpectrabaseAdditionalInfo.link, SpectrabaseMain.record_type,
-                  SpectrabaseAdditionalInfo.data_type, SpectrabaseAdditionalInfo.comment)
+    base_q = db.select(SpectrabaseMain.dtxsid, SpectrabaseMain.name, SpectrabaseMain.casrn, SpectrabaseMain.inchikey,
+                       SpectrabaseAdditionalInfo.spectrum_type, SpectrabaseAdditionalInfo.source, 
+                       SpectrabaseAdditionalInfo.internal_id, SpectrabaseAdditionalInfo.link, SpectrabaseMain.record_type,
+                       SpectrabaseAdditionalInfo.data_type, SpectrabaseAdditionalInfo.comment)
     
-    q = q.filter(SpectrabaseMain.dtxsid != None)
+    base_q = base_q.filter(SpectrabaseMain.dtxsid != None)
     
     if search_type == SearchType.InChIKey:
-        q = q.filter(SpectrabaseMain.inchikey == search_value)
+        q = base_q.filter(SpectrabaseMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(SpectrabaseMain.casrn==search_value)
+        q = base_q.filter(SpectrabaseMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
-        q = q.filter(SpectrabaseMain.name.ilike(search_value))
+        q = base_q.filter(SpectrabaseMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
-        q = q.filter(SpectrabaseMain.dtxsid==search_value)
+        q = base_q.filter(SpectrabaseMain.dtxsid==search_value)
     
     q = q.join_from(SpectrabaseMain, SpectrabaseAdditionalInfo,
                     SpectrabaseMain.internal_id==SpectrabaseAdditionalInfo.internal_id)
     
     results = db.session.execute(q).all()
+
+    if (len(results) == 0) and (search_type == SearchType.CompoundName):
+        q2 = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_value))
+        synonym_results = db.session.execute(q2).all()
+        if len(synonym_results) > 0:
+            synonym_dtxsid = synonym_results[0].dtxsid
+            q_syn = base_q.filter(SpectrabaseMain.dtxsid==synonym_dtxsid).join_from(SpectrabaseMain, SpectrabaseAdditionalInfo,
+                    SpectrabaseMain.internal_id==SpectrabaseAdditionalInfo.internal_id)
+            results = db.session.execute(q_syn).all()
     
     return [r._asdict() for r in results]
 
 
 def cfsre_search(search_type, search_value):
-    q = db.select(CFSREMain.dtxsid, CFSREMain.name, CFSREMain.casrn, CFSREMain.inchikey,
-                  CFSREAdditionalInfo.spectrum_type, CFSREAdditionalInfo.source, 
-                  CFSREAdditionalInfo.internal_id, CFSREAdditionalInfo.link, CFSREMain.record_type,
-                  CFSREAdditionalInfo.data_type, CFSREAdditionalInfo.comment)
+    base_q = db.select(CFSREMain.dtxsid, CFSREMain.name, CFSREMain.casrn, CFSREMain.inchikey,
+                       CFSREAdditionalInfo.spectrum_type, CFSREAdditionalInfo.source, 
+                       CFSREAdditionalInfo.internal_id, CFSREAdditionalInfo.link, CFSREMain.record_type,
+                       CFSREAdditionalInfo.data_type, CFSREAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        q = q.filter(CFSREMain.inchikey == search_value)
+        q = base_q.filter(CFSREMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(CFSREMain.casrn==search_value)
+        q = base_q.filter(CFSREMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
-        q = q.filter(CFSREMain.name.ilike(search_value))
+        q = base_q.filter(CFSREMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
-        q = q.filter(CFSREMain.dtxsid==search_value)
+        q = base_q.filter(CFSREMain.dtxsid==search_value)
     
     q = q.join_from(CFSREMain, CFSREAdditionalInfo,
                     CFSREMain.internal_id==CFSREAdditionalInfo.internal_id)
     
     results = db.session.execute(q).all()
     
+    if (len(results) == 0) and (search_type == SearchType.CompoundName):
+        q2 = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_value))
+        synonym_results = db.session.execute(q2).all()
+        if len(synonym_results) > 0:
+            synonym_dtxsid = synonym_results[0].dtxsid
+            q_syn = base_q.filter(CFSREMain.dtxsid==synonym_dtxsid).join_from(CFSREMain, CFSREAdditionalInfo,
+                    CFSREMain.internal_id==CFSREAdditionalInfo.internal_id)
+            results = db.session.execute(q_syn).all()
+
     return [r._asdict() for r in results]
 
 
 def massbank_search(search_type, search_value):
-    q = db.select(MassbankMain.dtxsid, MassbankMain.name, MassbankMain.casrn, MassbankMain.inchikey,
+    base_q = db.select(MassbankMain.dtxsid, MassbankMain.name, MassbankMain.casrn, MassbankMain.inchikey,
                   MassbankAdditionalInfo.spectrum_type, MassbankAdditionalInfo.source, 
                   MassbankAdditionalInfo.internal_id, MassbankAdditionalInfo.link, MassbankMain.record_type,
                   MassbankAdditionalInfo.data_type, MassbankAdditionalInfo.comment)
+
+    base_q = base_q.filter(MassbankMain.dtxsid != None)
     
     if search_type == SearchType.InChIKey:
-        q = q.filter(MassbankMain.inchikey == search_value)
+        q = base_q.filter(MassbankMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(MassbankMain.casrn==search_value)
+        q = base_q.filter(MassbankMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
-        q = q.filter(MassbankMain.name.ilike(search_value))
+        q = base_q.filter(MassbankMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
-        q = q.filter(MassbankMain.dtxsid==search_value)
+        q = base_q.filter(MassbankMain.dtxsid==search_value)
     
     q = q.join_from(MassbankMain, MassbankAdditionalInfo,
                     MassbankMain.internal_id==MassbankAdditionalInfo.internal_id)
     
     results = db.session.execute(q).all()
+
+    if (len(results) == 0) and (search_type == SearchType.CompoundName):
+        q2 = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_value))
+        synonym_results = db.session.execute(q2).all()
+        if len(synonym_results) > 0:
+            synonym_dtxsid = synonym_results[0].dtxsid
+            q_syn = base_q.filter(MassbankMain.dtxsid==synonym_dtxsid).join_from(MassbankMain, MassbankAdditionalInfo,
+                    MassbankMain.internal_id==MassbankAdditionalInfo.internal_id)
+            results = db.session.execute(q_syn).all()
     
     return [r._asdict() for r in results]
 
 
 def swg_ms_search(search_type, search_value):
-    q = db.select(SWGMSMain.dtxsid, SWGMSMain.name, SWGMSMain.casrn, SWGMSMain.inchikey,
-                  SWGMSAdditionalInfo.spectrum_type, SWGMSAdditionalInfo.source, 
-                  SWGMSAdditionalInfo.internal_id, SWGMSAdditionalInfo.link, SWGMSMain.record_type,
-                  SWGMSAdditionalInfo.data_type, SWGMSAdditionalInfo.comment)
+    base_q = db.select(SWGMSMain.dtxsid, SWGMSMain.name, SWGMSMain.casrn, SWGMSMain.inchikey,
+                       SWGMSAdditionalInfo.spectrum_type, SWGMSAdditionalInfo.source, 
+                       SWGMSAdditionalInfo.internal_id, SWGMSAdditionalInfo.link, SWGMSMain.record_type,
+                       SWGMSAdditionalInfo.data_type, SWGMSAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        q = q.filter(SWGMSMain.inchikey == search_value)
+        q = base_q.filter(SWGMSMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(SWGMSMain.casrn==search_value)
+        q = base_q.filter(SWGMSMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
-        q = q.filter(SWGMSMain.name.ilike(search_value))
+        q = base_q.filter(SWGMSMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
-        q = q.filter(SWGMSMain.dtxsid==search_value)
+        q = base_q.filter(SWGMSMain.dtxsid==search_value)
     
     q = q.join_from(SWGMSMain, SWGMSAdditionalInfo,
                     SWGMSMain.internal_id==SWGMSAdditionalInfo.internal_id)
     
     results = db.session.execute(q).all()
+
+    if (len(results) == 0) and (search_type == SearchType.CompoundName):
+        q2 = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_value))
+        synonym_results = db.session.execute(q2).all()
+        if len(synonym_results) > 0:
+            synonym_dtxsid = synonym_results[0].dtxsid
+            q_syn = base_q.filter(SWGMSMain.dtxsid==synonym_dtxsid).join_from(SWGMSMain, SWGMSAdditionalInfo,
+                    SWGMSMain.internal_id==SWGMSAdditionalInfo.internal_id)
+            results = db.session.execute(q_syn).all()
     
     return [r._asdict() for r in results]
 
 
 def swg_monograph_search(search_type, search_value):
-    q = db.select(SWGMain.dtxsid, SWGMain.name, SWGMain.casrn, SWGMain.inchikey,
-                  SWGAdditionalInfo.spectrum_type, SWGAdditionalInfo.source, 
-                  SWGAdditionalInfo.internal_id, SWGAdditionalInfo.link, SWGMain.record_type,
-                  SWGAdditionalInfo.data_type, SWGAdditionalInfo.comment)
+    base_q = db.select(SWGMain.dtxsid, SWGMain.name, SWGMain.casrn, SWGMain.inchikey,
+                       SWGAdditionalInfo.spectrum_type, SWGAdditionalInfo.source, 
+                       SWGAdditionalInfo.internal_id, SWGAdditionalInfo.link, SWGMain.record_type,
+                       SWGAdditionalInfo.data_type, SWGAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        q = q.filter(SWGMain.inchikey == search_value)
+        q = base_q.filter(SWGMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(SWGMain.casrn==search_value)
+        q = base_q.filter(SWGMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
-        q = q.filter(SWGMain.name.ilike(search_value))
+        q = base_q.filter(SWGMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
-        q = q.filter(SWGMain.dtxsid==search_value)
+        q = base_q.filter(SWGMain.dtxsid==search_value)
     
     q = q.join_from(SWGMain, SWGAdditionalInfo,
                     SWGMain.internal_id==SWGAdditionalInfo.internal_id)
     
     results = db.session.execute(q).all()
-    
+
+    if (len(results) == 0) and (search_type == SearchType.CompoundName):
+        q2 = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_value))
+        synonym_results = db.session.execute(q2).all()
+        if len(synonym_results) > 0:
+            synonym_dtxsid = synonym_results[0].dtxsid
+            q_syn = base_q.filter(SWGMain.dtxsid==synonym_dtxsid).join_from(SWGMain, SWGAdditionalInfo,
+                    SWGMain.internal_id==SWGAdditionalInfo.internal_id)
+            results = db.session.execute(q_syn).all()
+
     return [r._asdict() for r in results]
 
 
 def ecm_search(search_type, search_value):
-    q = db.select(ECMMain.dtxsid, ECMMain.name, ECMMain.casrn, ECMMain.inchikey,
-                  ECMAdditionalInfo.spectrum_type, ECMAdditionalInfo.source, 
-                  ECMAdditionalInfo.internal_id, ECMAdditionalInfo.link, ECMMain.record_type,
-                  ECMAdditionalInfo.data_type, ECMAdditionalInfo.comment)
+    base_q = db.select(ECMMain.dtxsid, ECMMain.name, ECMMain.casrn, ECMMain.inchikey,
+                       ECMAdditionalInfo.spectrum_type, ECMAdditionalInfo.source, 
+                       ECMAdditionalInfo.internal_id, ECMAdditionalInfo.link, ECMMain.record_type,
+                       ECMAdditionalInfo.data_type, ECMAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        q = q.filter(ECMMain.inchikey == search_value)
+        q = base_q.filter(ECMMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(ECMMain.casrn==search_value)
+        q = base_q.filter(ECMMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
-        q = q.filter(ECMMain.name.ilike(search_value))
+        q = base_q.filter(ECMMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
-        q = q.filter(ECMMain.dtxsid==search_value)
+        q = base_q.filter(ECMMain.dtxsid==search_value)
     
     q = q.join_from(ECMMain, ECMAdditionalInfo,
                     ECMMain.internal_id==ECMAdditionalInfo.internal_id)
+    
     results = db.session.execute(q).all()
+
+    if (len(results) == 0) and (search_type == SearchType.CompoundName):
+        q2 = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_value))
+        synonym_results = db.session.execute(q2).all()
+        if len(synonym_results) > 0:
+            synonym_dtxsid = synonym_results[0].dtxsid
+            q_syn = base_q.filter(ECMMain.dtxsid==synonym_dtxsid).join_from(ECMMain, ECMAdditionalInfo,
+                    ECMMain.internal_id==ECMAdditionalInfo.internal_id)
+            results = db.session.execute(q_syn).all()
     
     return [r._asdict() for r in results]
 
 
 def agilent_search(search_type, search_value):
-    q = db.select(AgilentMain.dtxsid, AgilentMain.name, AgilentMain.casrn, AgilentMain.inchikey,
-                  AgilentAdditionalInfo.spectrum_type, AgilentAdditionalInfo.source, 
-                  AgilentAdditionalInfo.internal_id, AgilentAdditionalInfo.link, AgilentMain.record_type,
-                  AgilentAdditionalInfo.data_type, AgilentAdditionalInfo.comment)
+    base_q = db.select(AgilentMain.dtxsid, AgilentMain.name, AgilentMain.casrn, AgilentMain.inchikey,
+                       AgilentAdditionalInfo.spectrum_type, AgilentAdditionalInfo.source, 
+                       AgilentAdditionalInfo.internal_id, AgilentAdditionalInfo.link, AgilentMain.record_type,
+                       AgilentAdditionalInfo.data_type, AgilentAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        q = q.filter(AgilentMain.inchikey == search_value)
+        q = base_q.filter(AgilentMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(AgilentMain.casrn==search_value)
+        q = base_q.filter(AgilentMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
-        q = q.filter(AgilentMain.name.ilike(search_value))
+        q = base_q.filter(AgilentMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
-        q = q.filter(AgilentMain.dtxsid==search_value)
+        q = base_q.filter(AgilentMain.dtxsid==search_value)
     
     q = q.join_from(AgilentMain, AgilentAdditionalInfo,
                     AgilentMain.internal_id==AgilentAdditionalInfo.internal_id)
     results = db.session.execute(q).all()
+
+    if (len(results) == 0) and (search_type == SearchType.CompoundName):
+        q2 = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_value))
+        synonym_results = db.session.execute(q2).all()
+        if len(synonym_results) > 0:
+            synonym_dtxsid = synonym_results[0].dtxsid
+            q_syn = base_q.filter(AgilentMain.dtxsid==synonym_dtxsid).join_from(AgilentMain, AgilentAdditionalInfo,
+                    AgilentMain.internal_id==AgilentAdditionalInfo.internal_id)
+            results = db.session.execute(q_syn).all()
     
     return [r._asdict() for r in results]
 
+
 def other_methods_search(search_type, search_value):
-    q = db.select(OtherMethodsMain.dtxsid, OtherMethodsMain.name, OtherMethodsMain.casrn, OtherMethodsMain.inchikey,
-                  OtherMethodsAdditionalInfo.spectrum_type, OtherMethodsAdditionalInfo.source, 
-                  OtherMethodsAdditionalInfo.internal_id, OtherMethodsAdditionalInfo.link, OtherMethodsMain.record_type,
-                  OtherMethodsAdditionalInfo.data_type, OtherMethodsAdditionalInfo.comment)
+    base_q = db.select(OtherMethodsMain.dtxsid, OtherMethodsMain.name, OtherMethodsMain.casrn, OtherMethodsMain.inchikey,
+                       OtherMethodsAdditionalInfo.spectrum_type, OtherMethodsAdditionalInfo.source, 
+                       OtherMethodsAdditionalInfo.internal_id, OtherMethodsAdditionalInfo.link, OtherMethodsMain.record_type,
+                       OtherMethodsAdditionalInfo.data_type, OtherMethodsAdditionalInfo.comment)
     
     if search_type == SearchType.InChIKey:
-        q = q.filter(OtherMethodsMain.inchikey == search_value)
+        q = base_q.filter(OtherMethodsMain.inchikey == search_value)
     elif search_type == SearchType.CASRN:
-        q = q.filter(OtherMethodsMain.casrn==search_value)
+        q = base_q.filter(OtherMethodsMain.casrn==search_value)
     elif search_type == SearchType.CompoundName:
-        q = q.filter(OtherMethodsMain.name.ilike(search_value))
+        q = base_q.filter(OtherMethodsMain.name.ilike(search_value))
     elif search_type == SearchType.DTXSID:
-        q = q.filter(OtherMethodsMain.dtxsid==search_value)
+        q = base_q.filter(OtherMethodsMain.dtxsid==search_value)
     
     q = q.join_from(OtherMethodsMain, OtherMethodsAdditionalInfo,
                     OtherMethodsMain.internal_id==OtherMethodsAdditionalInfo.internal_id)
     results = db.session.execute(q).all()
+
+    if (len(results) == 0) and (search_type == SearchType.CompoundName):
+        q2 = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_value))
+        synonym_results = db.session.execute(q2).all()
+        if len(synonym_results) > 0:
+            synonym_dtxsid = synonym_results[0].dtxsid
+            q_syn = base_q.filter(OtherMethodsMain.dtxsid==synonym_dtxsid).join_from(OtherMethodsMain, OtherMethodsAdditionalInfo,
+                    OtherMethodsMain.internal_id==OtherMethodsAdditionalInfo.internal_id)
+            results = db.session.execute(q_syn).all()
     
     return [r._asdict() for r in results]
 
@@ -367,9 +455,6 @@ def other_methods_search(search_type, search_value):
 def monograph_list():
     from time import gmtime, strftime
     print("START: ", strftime("%H:%M:%S", gmtime()))
-    ## Note: In the returned data, 'info_source' is a sort of sub-source, as both CFSRE and SWG
-    ## seem to aggregate monographs from a couple different sources.  The 'record_source' field
-    ## is used for internally identifying whether a record is in the CFSRE or SWG database.
     filenames = []
     monograph_info = []
 
@@ -389,7 +474,7 @@ def monograph_list():
     swg_filenames = [p.internal_id[:-4] for p in results]
     swg_monograph_info = []
     for r, fn in zip(results, swg_filenames):
-        swg_monograph_info.append({"name":r.monograph_name, "year_published":r.year_published, "info_source":r.sub_source, "filename":fn, "source":"Scientific Working Group", "internal_id":r.internal_id})
+        swg_monograph_info.append({"name":r.monograph_name, "year_published":r.year_published, "info_source":r.sub_source, "filename":fn, "source":"SWG", "internal_id":r.internal_id})
     filenames.extend(swg_filenames)
     monograph_info.extend(swg_monograph_info)
     
@@ -427,7 +512,7 @@ def download_swg(pdf_name):
 def retrieve_spectrum(source, internal_id):
     if source == "MoNA":
         q = db.select(MonaSpectra.spectrum, MonaSpectra.splash, MonaSpectra.normalized_entropy, MonaSpectra.spectral_entropy).filter(MonaSpectra.internal_id==internal_id)
-    elif source == "Scientific Working Group":
+    elif source == "SWG":
         q = db.select(SWGMSSpectra.spectrum, SWGMSSpectra.splash, SWGMSSpectra.normalized_entropy, SWGMSSpectra.spectral_entropy).filter(SWGMSSpectra.internal_id==internal_id)
     elif source == "MassBank EU":
         q = db.select(MassbankSpectra.spectrum, MassbankSpectra.splash, MassbankSpectra.normalized_entropy, MassbankSpectra.spectral_entropy).filter(MassbankSpectra.internal_id==internal_id)
@@ -454,9 +539,9 @@ def retrieve_spectrum(source, internal_id):
 def get_pdf(source, internal_id):
     if source.lower() == "cfsre":
         q = db.select(CFSREMonographs.pdf_data).filter(CFSREMonographs.internal_id==internal_id)
-    elif source == "Environmental Chemistry Methods":
+    elif source == "ECM":
         q = db.select(ECMMethods.pdf_data).filter(ECMMethods.internal_id==internal_id)
-    elif source == "Scientific Working Group":
+    elif source == "SWG":
         q = db.select(SWGMonographs.pdf_data).filter(SWGMonographs.internal_id==internal_id)
     elif source == "Agilent":
         q = db.select(AgilentMethods.pdf_data).filter(AgilentMethods.internal_id==internal_id)
@@ -477,27 +562,25 @@ def get_pdf(source, internal_id):
 
 @app.route("/get_pdf_metadata/<source>/<internal_id>")
 def get_pdf_metadata(source, internal_id):
-    if source == "Environmental Chemistry Methods":
+    if source == "ECM":
         q = db.select(ECMMethods.method_metadata, ECMMethods.method_name).filter(ECMMethods.internal_id==internal_id)
     elif source == "Agilent":
         q = db.select(AgilentMethods.method_metadata, AgilentMethods.method_name).filter(AgilentMethods.internal_id==internal_id)
     elif source == "CFSRE":
         q = db.select(CFSREMonographs.monograph_metadata, CFSREMonographs.monograph_name).filter(CFSREMonographs.internal_id==internal_id)
-    elif source == "Scientific Working Group":
+    elif source == "SWG":
         q = db.select(SWGMonographs.monograph_metadata, SWGMonographs.monograph_name).filter(SWGMonographs.internal_id==internal_id)
     else:
         q = db.select(OtherMethodsMethods.method_metadata, OtherMethodsMethods.method_name).filter(OtherMethodsMethods.internal_id==internal_id)
     
     data_row = db.session.execute(q).first()
     if data_row is not None:
-        if source in ["CFSRE", "Scientific Working Group"]:
+        if source in ["CFSRE", "SWG"]:
             pdf_metadata = data_row.monograph_metadata
             pdf_name = data_row.monograph_name
         else:
             pdf_metadata = data_row.method_metadata
             pdf_name = data_row.method_name
-        print(data_row)
-        print(f"PDF metadata: {pdf_metadata}")
         metadata_entries = pdf_metadata.split(";;")
         metadata_rows = [[x.split("::")[0], x.split("::")[1]] for x in metadata_entries]
         return jsonify({
@@ -527,8 +610,8 @@ def find_inchikeys(inchikey):
 @app.route("/find_dtxsids/<source>/<internal_id>")
 def find_dtxsids(source, internal_id):
     possible_sources = {
-        "scientific working group":SWGMain,
-        "environmental chemistry methods":ECMMain,
+        "swg":SWGMain,
+        "ecm":ECMMain,
         "cfsre":CFSREMain,
         "agilent":AgilentMain,
         "other":OtherMethodsMain
@@ -566,8 +649,7 @@ def find_similar_compounds(dtxsid, similarity_threshold=0.8):
 
 @app.route("/get_similar_methods/<dtxsid>")
 def get_similar_methods(dtxsid):
-    similar_compounds_json = find_similar_compounds(dtxsid)
-    print(similar_compounds_json)
+    similar_compounds_json = find_similar_compounds(dtxsid, similarity_threshold=0.5)
     similar_dtxsids = [sc["dtxsid"] for sc in similar_compounds_json]
     similarity_dict = {sc["dtxsid"]: sc["similarity"] for sc in similar_compounds_json}
     # add the actual DTXSID for now -- the case where there are methods for the DTXSID will likely be changed down the road
@@ -585,8 +667,41 @@ def get_similar_methods(dtxsid):
             ).filter(search_table.dtxsid.in_(similar_dtxsids)).join_from(search_table, additional_info, search_table.internal_id==additional_info.internal_id).join_from(search_table, method_table, search_table.internal_id==method_table.internal_id)
         similar_methods = [c._asdict() for c in db.session.execute(q).all()]
         results.extend(similar_methods)
-    results = [{**r, "similarity": similarity_dict[r["dtxsid"]]} for r in results]
-    return jsonify({"results":results})
+    
+    methods_with_searched_compound = [r["internal_id"] for r in results if r["dtxsid"] == dtxsid]
+    dtxsid_names = get_names_for_dtxsids([r["dtxsid"] for r in results])
+
+    internal_id_counts = Counter([r["internal_id"] for r in results])
+    methods_with_multiple_compounds = [x for x in internal_id_counts.keys() if internal_id_counts[x] > 1]
+
+    results = [{
+            **r, "similarity": similarity_dict[r["dtxsid"]], "compound_name":dtxsid_names.get(r["dtxsid"]),
+            "has_searched_compound": r["internal_id"] in methods_with_searched_compound,
+            "dummy_id": r["internal_id"] if r["internal_id"] in methods_with_multiple_compounds else None
+        } for r in results]
+    ids_to_method_names = {r["internal_id"]:r["method_name"] for r in results}
+
+    return jsonify({"results":results, "ids_to_method_names":ids_to_method_names})
+
+
+def get_names_for_dtxsids(dtxsid_list):
+    q = db.select(IDTable.preferred_name, IDTable.dtxsid).filter(IDTable.dtxsid.in_(dtxsid_list))
+    results = [c._asdict() for c in db.session.execute(q).all()]
+    names_for_dtxsids = {r["dtxsid"]:r["preferred_name"] for r in results}
+    return names_for_dtxsids
+
+@app.route("/methods_list")
+def get_all_methods():
+    table_tuples = [(AgilentMethods, AgilentAdditionalInfo), (ECMMethods, ECMAdditionalInfo), (OtherMethodsMethods, OtherMethodsAdditionalInfo)]
+    results = []
+    for methods, add_info in table_tuples:
+        print(methods)
+        q = db.select(methods.internal_id, methods.method_name, methods.method_number, methods.year_published,
+                      methods.matrix, methods.analyte, add_info.source, add_info.spectrum_type,
+                      add_info.comment).join_from(methods, add_info, methods.internal_id==add_info.internal_id)
+        results.extend([c._asdict() for c in db.session.execute(q).all()])
+    return jsonify({"results": results})
+
 
 if __name__ == "__main__":
     db.init_app(app)
