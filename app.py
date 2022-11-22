@@ -548,7 +548,6 @@ def get_pdf(source, internal_id):
     else:
         q = db.select(OtherMethodsMethods.pdf_data).filter(OtherMethodsMethods.internal_id==internal_id)
     
-    print(q)
     data_row = db.session.execute(q).first()
     if data_row is not None:
         pdf_content = data_row.pdf_data
@@ -630,26 +629,56 @@ def find_dtxsids(source, internal_id):
     else:
         return f"Unidentified source '{source}'"
 
-@app.route("/compound_similarity_search/<dtxsid>")
-def find_similar_compounds(dtxsid, similarity_threshold=0.8):
+
+@app.route("/compound_similarity_search/<search_term>")
+def find_similar_compounds(search_term, similarity_threshold=0.8):
     # Note: compound lists returned by this are sorted in decreasing order of
     # similarity, but the order of elements with the same similarity doesn't
     # appear to be guaranteed.
-    if not re.match("^DTXSID[0-9]*$", dtxsid):
-        return "Error: not a valid DTXSID."
+
+    search_type = determine_search_type(search_term)
+    dtxsid = None
+
+    if search_type == SearchType.CompoundName:
+        q = db.select(IDTable.dtxsid).filter(IDTable.preferred_name.ilike(search_term))
+        results = db.session.execute(q).all()
+        if len(results) == 0:
+            q_syn = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_term))
+            synonym_results = db.session.execute(q_syn).all()
+            if len(synonym_results) > 0:
+                dtxsid = synonym_results[0].dtxsid
+        else:
+            dtxsid = results[0].dtxsid
+    elif search_type != SearchType.DTXSID:
+        base_q = db.select(IDTable.dtxsid)
+        if search_type == SearchType.InChIKey:
+            q = base_q.filter(IDTable.inchikey == search_term)
+        elif search_type == SearchType.CASRN:
+            q = base_q.filter(IDTable.casrn == search_term)
+        else:
+            raise ValueError
+        results = db.session.execute(q).all()
+        if len(results) > 0:
+            dtxsid = results[0].dtxsid
+    else:
+        dtxsid = search_term
+
+    if dtxsid is None:
+        return None, {"response": False}
     
     BASE_URL = "https://ccte-api-ccd-dev.epa.gov/similar-compound/by-dtxsid/"
     response = requests.get(f"{BASE_URL}{dtxsid}/{similarity_threshold}")
     if response.status_code == 200:
-        return response.json()
+        return dtxsid, response.json()
     else:
         print("Error: ", response.status_code)
-        return {}
+        return None, {"response": False}
 
 
-@app.route("/get_similar_methods/<dtxsid>")
-def get_similar_methods(dtxsid):
-    similar_compounds_json = find_similar_compounds(dtxsid, similarity_threshold=0.5)
+
+@app.route("/get_similar_methods/<search_term>")
+def get_similar_methods(search_term):
+    dtxsid, similar_compounds_json = find_similar_compounds(search_term, similarity_threshold=0.5)
     similar_dtxsids = [sc["dtxsid"] for sc in similar_compounds_json]
     similarity_dict = {sc["dtxsid"]: sc["similarity"] for sc in similar_compounds_json}
     # add the actual DTXSID for now -- the case where there are methods for the DTXSID will likely be changed down the road
@@ -662,7 +691,7 @@ def get_similar_methods(dtxsid):
     table_tuples = [(ECMMain, ECMAdditionalInfo, ECMMethods), (AgilentMain, AgilentAdditionalInfo, AgilentMethods), (OtherMethodsMain, OtherMethodsAdditionalInfo, OtherMethodsMethods)]
     for search_table, additional_info, method_table in table_tuples:
         q = db.select(
-                search_table.internal_id, search_table.dtxsid, additional_info.source,
+                search_table.internal_id, search_table.dtxsid, additional_info.source, additional_info.spectrum_type,
                 method_table.method_name, method_table.year_published
             ).filter(search_table.dtxsid.in_(similar_dtxsids)).join_from(search_table, additional_info, search_table.internal_id==additional_info.internal_id).join_from(search_table, method_table, search_table.internal_id==method_table.internal_id)
         similar_methods = [c._asdict() for c in db.session.execute(q).all()]
@@ -677,7 +706,8 @@ def get_similar_methods(dtxsid):
     results = [{
             **r, "similarity": similarity_dict[r["dtxsid"]], "compound_name":dtxsid_names.get(r["dtxsid"]),
             "has_searched_compound": r["internal_id"] in methods_with_searched_compound,
-            "dummy_id": r["internal_id"] if r["internal_id"] in methods_with_multiple_compounds else None
+            "dummy_id": r["internal_id"] if r["internal_id"] in methods_with_multiple_compounds else None,
+            "year_published": clean_year(r["year_published"])
         } for r in results]
     ids_to_method_names = {r["internal_id"]:r["method_name"] for r in results}
 
@@ -695,13 +725,34 @@ def get_all_methods():
     table_tuples = [(AgilentMethods, AgilentAdditionalInfo), (ECMMethods, ECMAdditionalInfo), (OtherMethodsMethods, OtherMethodsAdditionalInfo)]
     results = []
     for methods, add_info in table_tuples:
-        print(methods)
         q = db.select(methods.internal_id, methods.method_name, methods.method_number, methods.year_published,
                       methods.matrix, methods.analyte, add_info.source, add_info.spectrum_type,
                       add_info.comment).join_from(methods, add_info, methods.internal_id==add_info.internal_id)
         results.extend([c._asdict() for c in db.session.execute(q).all()])
+    
+    results = [{**r, "year_published":clean_year(r["year_published"])} for r in results]
     return jsonify({"results": results})
 
+def clean_year(year_value):
+    """
+    Convenience function intended to take care of showing just the year of date
+    strings with various possible formats.  This should be sort of a patch job
+    until I can move the entire thing into Postgres, since that should enforce
+    typings (SQLite stores stuff as either integers or strings, as appropriate).
+    """
+    if type(year_value) == int:
+        return year_value
+    elif type(year_value) == str:
+        if re.match("^[0-9]{4}$", year_value):
+            return int(year_value)
+        elif re.match("^[0-9]+/[0-9]{4}$", year_value):
+            return int(year_value[-4:])
+        else:
+            print(f"Issue with year value {year_value} -- unclear string format")
+            return year_value
+    else:
+        print(f"Issue with year value {year_value} -- unclear type")
+        return year_value
 
 if __name__ == "__main__":
     db.init_app(app)
