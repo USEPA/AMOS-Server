@@ -612,22 +612,19 @@ def find_dtxsids(source, internal_id):
         "swg":SWGMain,
         "ecm":ECMMain,
         "cfsre":CFSREMain,
-        "agilent":AgilentMain,
-        "other":OtherMethodsMain
+        "agilent":AgilentMain
     }
-    if source.lower() in possible_sources.keys():
-        target_db = possible_sources[source.lower()]
-        q = db.select(target_db.dtxsid).filter(target_db.internal_id==internal_id)
-        dtxsids = db.session.execute(q).all()
-        if len(dtxsids) > 0:
-            dtxsids = [d[0] for d in dtxsids]
-            q2 = db.select(IDTable.dtxsid, IDTable.casrn, IDTable.preferred_name).filter(IDTable.dtxsid.in_(dtxsids))
-            chemical_ids = db.session.execute(q2).all()
-            return jsonify({"chemical_ids":[c._asdict() for c in chemical_ids]})
-        else:
-            return f"Unknown error -- no DTXSIDs found for internal ID {internal_id} from source {source}"
+
+    target_db = possible_sources.get(source.lower(), OtherMethodsMain)
+    q = db.select(target_db.dtxsid).filter(target_db.internal_id==internal_id)
+    dtxsids = db.session.execute(q).all()
+    if len(dtxsids) > 0:
+        dtxsids = [d[0] for d in dtxsids]
+        q2 = db.select(IDTable.dtxsid, IDTable.casrn, IDTable.preferred_name).filter(IDTable.dtxsid.in_(dtxsids))
+        chemical_ids = db.session.execute(q2).all()
+        return jsonify({"chemical_ids":[c._asdict() for c in chemical_ids]})
     else:
-        return f"Unidentified source '{source}'"
+        return f"Unknown error -- no DTXSIDs found for internal ID {internal_id} from source {source}"
 
 
 @app.route("/compound_similarity_search/<search_term>")
