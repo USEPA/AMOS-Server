@@ -1,0 +1,83 @@
+The following is a list of the tables found in the PostgreSQL database that this Flask app calls, along with descriptions of the tables' columns' contents.
+
+
+COMPOUNDS
+This table stores information about the compounds that are searchable in this database.  The information is pulled from DSSTox.
+- dtxsid: Substance ID used by EPA's DSSTox product.
+- casrn: Chemical Abstracts Service Registry Number.
+- inchikey: InChIKey string corresponding to the compound.
+- preferred_name: Name of the compound.  These are standardized to the EPA's preferred names as much as possible.
+- compound_image: Image of the compound.  (This column may be deleted later.)
+- molecular_formula: Molecular formula of the compound.
+- molecular_weight: Weight of the compound, in Daltons.
+- num_spectra: Number of spectra in thr database for this compound.  Currently not being calculated or used.
+- num_monographs: Number of monographs describing this compound.  Currently not being calculated or used.
+- num_methods: Number of methods that contain this compound.  Currently not being calculated or used.
+
+
+SYNONYMS
+Since there are a lot of possible names for compounds, but only one EPA-preferred name, this table covers a list of synonyms and the associated DTXSIDs.
+- dtxsid: Substance ID used by EPA's DSSTox product.
+- synonym: Synonym for the compound.
+
+
+CONTENTS
+This table connects the compound information tables (via the DTXSID) to the rest of the information for each record (via the internal identifier of the compound).
+- dtxsid: Substance ID used by EPA's DSSTox product.
+- internal_id: Unique identifier for each record.  For the most part, these identifiers are either the identifiers used in the original sources' data, or identifiers assigned by EPA curators (the latter generally only applies to methods).  This identifier is used across all tables that aren't purely concerned with compound information.
+
+
+RECORD INFO
+This table covers general info that is associated with every kind of record in the database.  Its contents are primarily used by the main search results, though some fields are used to augment results on other pages.
+- internal_id: Same as above.
+- spectrum_types: A list of the spectrum/methodology types present in the record.
+- source: The source where the data was acquired from.  Note that this isn't necessarily the origin of the data, as some sources (e.g., MoNA) aggregate several other sources of data.
+- link: The URL where the original record can be found.
+- experimental: Boolean indicating whether the record is the result of experimental data (true) or not (false)
+- description: A description of the data in the record.  The exact contents of this string vary a lot, but generally, this field covers experimental parameters for spectra and summaries or abstracts for monographs and methods.
+- data_type: Indicates what kind of data this record is associated with.  Currently should be either "spectrum" or "PDF".
+- record_type: The kind of record that this entry represents -- either a spectrum, a monograph, or a method.
+
+
+SPECTRUM DATA
+This table stores information specific to mass spectra whose spectra are stored directly in the database (so, for instance, Spectrabase doesn't supply the actual spectra in its data dump, so it has no rows in this table).
+- internal_id: Same as above.
+- splash: Spectral Hash Identifier.  See https://splash.fiehnlab.ucdavis.edu/ for more information.
+- spectrum: The spectrum, formatted as two-dimensional array describing a list of charge-to-mass ratios and intensities.
+- spectral_entropy: A measurement of the quality of a spectrum, calculated using code based on MoNA's source code.  Will be missing values for spectra with one point (while the formula does actually give a valid value for this case -- zero -- it is not useful, and is stored as missing to be consistent with the normalized entropy below).
+- normalized_entropy: A measurement of the quality of a spectrum.  It is a scaling of the spectral entropy to try to offset the effects of having a large number of peaks in the data.
+
+
+SPECTRUM PDFS
+This table contains information specific to PDFs that contain spectra that are stored in the database, as well as the PDFs themselves.
+- internal_id: Same as above.
+- pdf_data: The PDF file, stored as binary data.
+- pdf_metadata: A JSON document storing information about the PDF.
+- sub_source: Some sources include PDFs from other sources.  This field is used to denote that original source.
+- date_published: A string containing the publication date of the PDF.  The format of the dates is not guaranteed to be consistent between all monographs.
+- external_use_allowed: Whether the monograph will be displayable outside the EPA.  Currently not used by the app.
+
+
+MONOGRAPHS
+This table contains information specific to monographs stored in the database, as well as the monograph PDFs themselves.
+- internal_id: Same as above.
+- pdf_data: The PDF file, stored as binary data.
+- pdf_metadata: A JSON document storing information about the monograph.
+- sub_source: Some sources include monographs from other sources.  This field is used to denote that original source.
+- date_published: A string containing the publication date of the monograph.  The format of the dates is not guaranteed to be consistent between all monographs.
+- external_use_allowed: Whether the monograph will be displayable outside the EPA.  Currently not used by the app.
+- monograph_name: The name/title of the monograph.
+
+
+METHODS
+This table contains information specific to methods stored in the database, as well as the method PDFs themselves.
+- internal_id: Same as above.
+- pdf_data: The PDF file, stored as binary data.
+- pdf_metadata: A JSON document storing metadata about the method.  There is currently no restriction on the 
+- sub_source: Some sources include methods from other sources.  This field is used to denote that original source.
+- date_published: A string containing the publication date of the method.  The format of the dates is not guaranteed to be consistent between all monographs.
+- external_use_allowed: Whether the method will be displayable outside the EPA.  Currently not used by the app.
+- method_name: The name/title of the methods.
+- method_number: A secondary identification number for the method.  Values in internal_id are currently generated by
+- analyte: A category of compounds that the method focuses on.
+- matrix: The matrix where the compound was discovered and/or analyzed in.
