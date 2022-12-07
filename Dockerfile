@@ -10,6 +10,7 @@ RUN apt-get update
 RUN apt-get install -y python3.9
 RUN apt-get install -y python3-pip
 RUN apt-get install -y python3-tk
+RUN apt-get install -y libpq-dev
 
 # Install pip
 #RUN echo Y  apt install python3-pip
