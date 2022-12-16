@@ -47,6 +47,7 @@ class RecordInfo(db.Model):
     source = db.Column(db.VARCHAR(64))
     link = db.Column(db.TEXT)
     experimental = db.Column(db.BOOLEAN)
+    external_use_allowed = db.Column(db.BOOLEAN)
     description = db.Column(db.TEXT)
     data_type = db.Column(db.VARCHAR(32))
     record_type = db.Column(db.VARCHAR(32))
@@ -81,7 +82,6 @@ class Monographs(db.Model):
     pdf_metadata = db.Column(db.JSON)
     sub_source = db.Column(db.TEXT)
     date_published = db.Column(db.TEXT)
-    external_use_allowed = db.Column(db.BOOLEAN)
     monograph_name = db.Column(db.TEXT)
 
 
@@ -93,7 +93,6 @@ class Methods(db.Model):
     pdf_metadata = db.Column(db.JSON)
     sub_source = db.Column(db.TEXT)
     date_published = db.Column(db.TEXT)
-    external_use_allowed = db.Column(db.BOOLEAN)
     method_name = db.Column(db.TEXT)
     method_number = db.Column(db.TEXT)
     analyte = db.Column(db.TEXT)

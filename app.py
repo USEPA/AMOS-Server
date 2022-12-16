@@ -1,9 +1,12 @@
 from collections import Counter
 import configparser
+import csv
 from enum import Enum
+import io
+import json
 import re
 
-from flask import Flask, jsonify, make_response
+from flask import Flask, jsonify, make_response, request
 from flask_cors import CORS
 import requests
 
@@ -411,9 +414,23 @@ def get_similar_methods(search_term):
     return jsonify({"results":results, "ids_to_method_names":ids_to_method_names})
 
 
-@app.route("/batch_search/<search_term>")
+@app.route("/batch_search", methods=["POST"])
 def batch_search():
-    pass
+    dtxsid_list = request.get_json()["dtxsids"]
+    q = db.select(
+            Contents.dtxsid, RecordInfo.spectrum_types, RecordInfo.source, RecordInfo.link, RecordInfo.record_type, RecordInfo.description
+        ).filter(Contents.dtxsid.in_(dtxsid_list)).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id)
+    results = [c._asdict() for c in db.session.execute(q).all()]
+
+    if len(results) > 0:
+        f = io.StringIO("")
+        writer = csv.DictWriter(f, fieldnames=results[0].keys())
+        writer.writeheader()
+        writer.writerows(results)
+
+        return jsonify({"csv_string":f.getvalue()})
+    else:
+        return jsonify({"csv_string":""})
 
 
 
