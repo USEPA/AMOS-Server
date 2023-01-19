@@ -11,7 +11,7 @@ from flask_cors import CORS
 import requests
 
 from table_definitions import db, Compounds, Contents, Methods, Monographs, \
-    RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
+    MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
 
 # load info for PostgreSQL access from external file
 config = configparser.ConfigParser()
@@ -26,6 +26,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = "secretkey"
 
 CORS(app, resources={r'/*': {'origins': '*'}})
+
 
 
 class SearchType(Enum):
@@ -210,10 +211,18 @@ def retrieve_spectrum(internal_id):
     A JSON structure containing the information about the spectrum - entropies,
     SPLASH, and the spectrum itself.
     """
-    q = db.select(SpectrumData.spectrum, SpectrumData.splash, SpectrumData.normalized_entropy, SpectrumData.spectral_entropy).filter(SpectrumData.internal_id==internal_id)
+    q = db.select(SpectrumData.spectrum, SpectrumData.splash, SpectrumData.normalized_entropy, SpectrumData.spectral_entropy, SpectrumData.has_associated_method).filter(SpectrumData.internal_id==internal_id)
     data_row = db.session.execute(q).first()
     if data_row is not None:
-        return jsonify(data_row._asdict())
+        data_dict = data_row._asdict()
+
+        # Postgres stores the missing values for entropies as 'NaN'; for some reason, passing these
+        # to jsonify() causes it to send the dictionary as a string, so fix that
+        if len(data_dict["spectrum"]) == 1:
+            data_dict["spectral_entropy"] = None
+            data_dict["normalized_entropy"] = None
+        return jsonify(data_dict)
+
     else:
         return "Error: invalid internal id."
 
@@ -305,16 +314,18 @@ def get_pdf_metadata(record_type, internal_id):
     if record_type.lower() == "monograph":
         q = db.select(Monographs.monograph_name.label("doc_name"), Monographs.pdf_metadata).filter(Monographs.internal_id==internal_id)
     elif record_type.lower() == "method":
-        q = db.select(Methods.method_name.label("doc_name"), Methods.pdf_metadata).filter(Methods.internal_id==internal_id)
+        q = db.select(Methods.method_name.label("doc_name"), Methods.pdf_metadata, Methods.has_associated_spectra).filter(Methods.internal_id==internal_id)
     else:
         return f"Error: invalid record type {record_type}."
 
 
     data_row = db.session.execute(q).first()
     if data_row is not None:
+        data_row = data_row._asdict()
         return jsonify({
-            "pdf_name": data_row.doc_name,
-            "metadata_rows": data_row.pdf_metadata
+            "pdf_name": data_row["doc_name"],
+            "metadata_rows": data_row["pdf_metadata"],
+            "has_associated_spectra": data_row.get("has_associated_spectra", False)
         })
     else:
         print("Error")
@@ -416,13 +427,22 @@ def get_similar_methods(search_term):
 
 @app.route("/batch_search", methods=["POST"])
 def batch_search():
+    print(request.get_json())
     dtxsid_list = request.get_json()["dtxsids"]
     q = db.select(
-            Contents.dtxsid, RecordInfo.spectrum_types, RecordInfo.source, RecordInfo.link, RecordInfo.record_type, RecordInfo.description
+            Contents.internal_id, Contents.dtxsid, RecordInfo.spectrum_types, RecordInfo.source, RecordInfo.link,
+            RecordInfo.record_type, RecordInfo.description
         ).filter(Contents.dtxsid.in_(dtxsid_list)).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id)
     results = [c._asdict() for c in db.session.execute(q).all()]
 
     if len(results) > 0:
+        base_url = request.get_json()["base_url"]
+        for i, r in enumerate(results):
+            if r["link"] is None:
+                print(r)
+                results[i]["link"] = f"{base_url}/search/{r['dtxsid']}?initial_row_selected={r['internal_id']}"
+                print(results[i])
+
         f = io.StringIO("")
         writer = csv.DictWriter(f, fieldnames=results[0].keys())
         writer.writeheader()
@@ -431,6 +451,28 @@ def batch_search():
         return jsonify({"csv_string":f.getvalue()})
     else:
         return jsonify({"csv_string":""})
+
+
+@app.route("/method_with_spectra/<search_type>/<internal_id>")
+def method_with_spectra_search(search_type, internal_id):
+    if search_type == "spectrum":
+        q = db.select(MethodsWithSpectra.method_id).filter(MethodsWithSpectra.spectrum_id == internal_id)
+        result = [c._asdict() for c in db.session.execute(q).all()]
+        if len(result) == 0:
+            return f"No method found that matches spectrum id '{internal_id}'."
+        method_id = result[0]["method_id"]
+    elif search_type == "method":
+        method_id = internal_id
+    else:
+        return f"Invalid search type {search_type}."
+    
+    spectrum_q = db.select(MethodsWithSpectra.spectrum_id).filter(MethodsWithSpectra.method_id == method_id)
+    spectrum_list = [c.spectrum_id for c in db.session.execute(spectrum_q).all()]
+
+    info_q = db.select(Contents.internal_id, Contents.dtxsid, Compounds.preferred_name).filter(Contents.internal_id.in_(spectrum_list)).join_from(Contents, Compounds, Contents.dtxsid==Compounds.dtxsid)
+    info_entries = [c._asdict() for c in db.session.execute(info_q).all()]
+    
+    return jsonify({"method_id": method_id, "spectrum_ids": spectrum_list, "info": info_entries})
 
 
 

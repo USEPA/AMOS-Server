@@ -61,6 +61,7 @@ class SpectrumData(db.Model):
     spectrum = db.Column(ARRAY(db.REAL, dimensions=2))
     spectral_entropy = db.Column(db.REAL)
     normalized_entropy = db.Column(db.REAL)
+    has_associated_method = db.Column(db.BOOLEAN)
 
 
 class SpectrumPDFs(db.Model):
@@ -97,3 +98,10 @@ class Methods(db.Model):
     method_number = db.Column(db.TEXT)
     analyte = db.Column(db.TEXT)
     matrix = db.Column(db.TEXT)
+    has_associated_spectra = db.Column(db.BOOLEAN)
+
+class MethodsWithSpectra(db.Model):
+    __tablename__ = "methods_with_spectra"
+    __table_args__ = {'schema': 'spectrum_db'}
+    spectrum_id = db.Column(db.TEXT, primary_key=True)
+    method_id = db.Column(db.TEXT)
