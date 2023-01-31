@@ -68,7 +68,8 @@ def get_dtxsid_for_search_term(search_term):
     matches it.  There are four cases, depending on what the search term looks
     like:
 
-    - If it's a DTXSID already, just return it.
+    - If it's a DTXSID already, check to see if it exists in the database; if it
+    is there, return it.
     - If it's a CASRN, check if something in the Compounds table has that CASRN,
     and return the corresponding DTXSID if it is.
     - If it's an InChIKey, check if something in the Compounds table has that
@@ -93,7 +94,10 @@ def get_dtxsid_for_search_term(search_term):
     dtxsid = None   # default value
 
     if search_type == SearchType.DTXSID:
-        dtxsid = search_term
+        q = db.select(Compounds.dtxsid).filter(Compounds.dtxsid == search_term)
+        results = db.session.execute(q).all()
+        if len(results) > 0:
+            dtxsid = search_term
     elif search_type == SearchType.CompoundName:
         q = db.select(Compounds.dtxsid).filter(Compounds.preferred_name.ilike(search_term))
         results = db.session.execute(q).all()
@@ -111,7 +115,7 @@ def get_dtxsid_for_search_term(search_term):
         elif search_type == SearchType.CASRN:
             q = db.select(Compounds.dtxsid).filter(Compounds.casrn == search_term)
         else:
-            raise ValueError
+            raise ValueError("Invalid value for search type")
         results = db.session.execute(q).all()
         if len(results) > 0:
             dtxsid = results[0].dtxsid
@@ -137,8 +141,21 @@ def clean_year(year_value):
 
     NOTE: unsure whether the behavior for unknown date format should be
     just returning the value, or returning a blank or something.
-    """
 
+    Parameters
+    ----------
+    year_value : string
+        A date in string form.  Currently should be either a four-digit year or
+        a one/two-digit month followed by a four-digit year.
+
+    Returns
+    -------
+    Either None (if the input was None), the year (if the string could be
+    parsed), or the original value (if it couldn't be parsed).
+
+    """
+    if year_value is None:
+        return None
     if re.match("^[0-9]{4}$", year_value):
         return int(year_value)
     elif re.match("^[0-9]+/[0-9]{4}$", year_value):
@@ -173,19 +190,21 @@ def search_results(search_term):
     general information on the searched compound.
     """
     dtxsid = get_dtxsid_for_search_term(search_term)
+    if dtxsid is None:
+        return jsonify({"no_compound_match": True})
+
+    # get_dtxsid_for_search_term should catch invalid DTXSIDs, so compound_info
+    # shouldn't need to be checked if it's empty
+    info_query = db.select(Compounds).filter(Compounds.dtxsid == dtxsid)
+    info_results = db.session.execute(info_query).all()
+    compound_info = info_results[0][0].get_row_contents()
+
     id_query = db.select(Contents.internal_id).filter(Contents.dtxsid == dtxsid)
     internal_ids = [ir.internal_id for ir in db.session.execute(id_query).all()]
     record_query = db.select(RecordInfo.source, RecordInfo.internal_id, RecordInfo.link, RecordInfo.record_type, RecordInfo.spectrum_types,
                        RecordInfo.data_type, RecordInfo.description).filter(RecordInfo.internal_id.in_(internal_ids))
     records = [r._asdict() for r in db.session.execute(record_query)]
 
-    info_query = db.select(Compounds).filter(Compounds.dtxsid == dtxsid)
-    info_results = db.session.execute(info_query).all()
-    if len(info_results) == 0:
-        compound_info = {}
-    else:
-        compound_info = info_results[0][0].get_row_contents()
-    
     result_record_types = [r["record_type"] for r in records]
     record_type_counts = Counter(result_record_types)
     for record_type in ["Method", "Monograph", "Spectrum"]:
@@ -310,6 +329,20 @@ def get_pdf_metadata(record_type, internal_id):
     Retrieves metadata associated with a PDF.  Both monographs and methods have
     associated metadata, so this uses the record_type argument to differentiate
     between them.
+
+    Parameters
+    ----------
+    record_type : string
+        A string indicating which kind of record is being retrieved.  Valid
+        values are 'monograph' and 'method'.
+    
+    internal_id : string
+        ID of the document in the database.
+
+    Returns
+    -------
+    A JSON structure containing the metadata, the name, and whether or not the
+    method has associated spectra.
     """
     if record_type.lower() == "monograph":
         q = db.select(Monographs.monograph_name.label("doc_name"), Monographs.pdf_metadata).filter(Monographs.internal_id==internal_id)
@@ -339,12 +372,22 @@ def find_inchikeys(inchikey):
     key.  Searches of the database by InChIKey may be looking for a variant of
     the compound instead of what they searched for, and another compound with a
     different InChIKey may cover it.
+
+    Parameters
+    ----------
+    inchikey : string
+        The InChIKey being searched on.
+
+    Returns
+    -------
+    A JSON structure containing an indicator of whether the searched InChIKey
+    exists, as well as a list of all InChIKeys with the same first block.
     """
     inchikey_first_block = inchikey[:14]
     q = db.select(Compounds.inchikey, Compounds.preferred_name).filter(Compounds.inchikey.like(inchikey_first_block+"%"))
     results = [r._asdict() for r in db.session.execute(q).all()]
     inchikeys = [r["inchikey"] for r in results]
-    inchikey_present = inchikey in set(inchikeys)   #NOTE: don't know if deduping is really necessary, but leaving it for now.
+    inchikey_present = inchikey in inchikeys
     return jsonify({
         "inchikey_present": inchikey_present,
         "unique_inchikeys": sorted(results, key = lambda x: x["inchikey"])
@@ -355,7 +398,18 @@ def find_inchikeys(inchikey):
 def find_dtxsids(internal_id):
     """
     Returns a list of DTXSIDs associated with the specified internal ID, along
-    with additional compound information.
+    with additional compound information.  This is mostly used for pulling back
+    information on the compounds listed in a method or monograph.
+
+    Parameters
+    ----------
+    internal_id : string
+        Database ID of the record.
+
+    Returns
+    -------
+    A JSON structure containing a list of compound information.  This will be
+    empty if no records were found.
     """
     q = db.select(Contents.dtxsid).filter(Contents.internal_id==internal_id)
     dtxsids = db.session.execute(q).all()
@@ -375,6 +429,22 @@ def find_similar_compounds(search_term, similarity_threshold=0.8):
     Makes a call to an EPA-built API for compound similarity and returns the
     list of DTXSIDs of compounds with a similarity measure at or above the
     `similarity_threshold` parameter.
+
+    Parameters
+    ----------
+    search_term : string
+        A name, CASRN, InChIKey, or DTXSID to search on.
+    
+    similarity_threshold : float
+        A value from 0 to 1, sent to an EPA API as a threshold for how similar
+        the compounds you're searching for should be.  Higher values will return
+        only highly similar compounds.
+
+
+    Returns
+    -------
+    A JSON structure containing a list of compound information.  This will be
+    empty if no records were found.
     """
     dtxsid = get_dtxsid_for_search_term(search_term)
 
@@ -394,7 +464,9 @@ def find_similar_compounds(search_term, similarity_threshold=0.8):
 def get_similar_methods(search_term):
     """
     Searches the database for all methods which contain at least one compound
-    of sufficient similarity to the searched compound.
+    of sufficient similarity to the searched compound.  The searched similarity
+    level is hardcoded here, and I currently have no plans to make it
+    adjustable by the app.
     """
     dtxsid, similar_compounds_json = find_similar_compounds(search_term, similarity_threshold=0.5)
     similar_dtxsids = [sc["dtxsid"] for sc in similar_compounds_json]
@@ -427,7 +499,12 @@ def get_similar_methods(search_term):
 
 @app.route("/batch_search", methods=["POST"])
 def batch_search():
-    print(request.get_json())
+    """
+    Receives a list of DTXSIDs and returns information on all records in the
+    database that contain those DTXSIDs.  If a record contains more than one of
+    the searched DTXSIDs, then that record will appear once for each searched
+    compound it contains.
+    """
     dtxsid_list = request.get_json()["dtxsids"]
     q = db.select(
             Contents.internal_id, Contents.dtxsid, RecordInfo.spectrum_types, RecordInfo.source, RecordInfo.link,
@@ -455,6 +532,11 @@ def batch_search():
 
 @app.route("/method_with_spectra/<search_type>/<internal_id>")
 def method_with_spectra_search(search_type, internal_id):
+    """
+    Attempts to return information about a method with linked spectra.
+    Searching is done using the internal ID of either the method or one of its
+    spectra.
+    """
     if search_type == "spectrum":
         q = db.select(MethodsWithSpectra.method_id).filter(MethodsWithSpectra.spectrum_id == internal_id)
         result = [c._asdict() for c in db.session.execute(q).all()]
