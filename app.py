@@ -156,7 +156,9 @@ def clean_year(year_value):
     """
     if year_value is None:
         return None
-    if re.match("^[0-9]{4}$", year_value):
+    elif re.match("^[0-9]{4}-[01][0-9]-[0-3][0-9]$", year_value):
+        return int(year_value[:4])
+    elif re.match("^[0-9]{4}$", year_value):
         return int(year_value)
     elif re.match("^[0-9]+/[0-9]{4}$", year_value):
         return int(year_value[-4:])
@@ -212,7 +214,7 @@ def search_results(search_term):
             record_type_counts[record_type] = 0
     record_type_counts = {k.lower(): v for k,v in record_type_counts.items()}
 
-    return jsonify({"records": records, "compound_info":compound_info, "record_type_counts":record_type_counts})
+    return jsonify({"records":records, "compound_info":compound_info, "record_type_counts":record_type_counts})
 
 
 @app.route("/get_spectrum/<internal_id>")
@@ -515,11 +517,11 @@ def batch_search():
     if len(results) > 0:
         base_url = request.get_json()["base_url"]
         for i, r in enumerate(results):
+            # if a record has no link, have it link back to the search page of the Vue app with the row preselected
             if r["link"] is None:
-                print(r)
                 results[i]["link"] = f"{base_url}/search/{r['dtxsid']}?initial_row_selected={r['internal_id']}"
-                print(results[i])
 
+        # construct the CSV as a string
         f = io.StringIO("")
         writer = csv.DictWriter(f, fieldnames=results[0].keys())
         writer.writeheader()
@@ -555,6 +557,30 @@ def method_with_spectra_search(search_type, internal_id):
     info_entries = [c._asdict() for c in db.session.execute(info_q).all()]
     
     return jsonify({"method_id": method_id, "spectrum_ids": spectrum_list, "info": info_entries})
+
+
+@app.route("/spectrum_count_by_type/", methods=["POST"])
+def get_spectrum_count_by_type():
+    """
+    Endpoint for getting a count of spectrum records that have the specified
+    spectrum type as one of its spectrum types.  (A few data sources can have
+    multiple spectrum types.)
+
+    Note that parameters are currently handled by a POST rather than in the URL
+    (like most of the other functions here) due to the fact that a lot of
+    spectrum types have forward slashes in them (e.g., 'LC/MS'), which disrupts
+    Flask's routing.
+
+    Currently intended for use with applications outside of the Vue app.
+    """
+
+    dtxsid = request.get_json()["dtxsid"]
+    spectrum_type = request.get_json()["spectrum_type"]
+
+    q = db.select(Contents.internal_id).filter(
+            RecordInfo.spectrum_types.contains([spectrum_type]) & (RecordInfo.record_type == "Spectrum") & (Contents.dtxsid == dtxsid)
+    ).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id)
+    return jsonify({"count": len(db.session.execute(q).all())})
 
 
 

@@ -62,6 +62,7 @@ class SpectrumData(db.Model):
     spectral_entropy = db.Column(db.REAL)
     normalized_entropy = db.Column(db.REAL)
     has_associated_method = db.Column(db.BOOLEAN)
+    spectrum_metadata = db.Column(db.JSON)
 
 
 class SpectrumPDFs(db.Model):
@@ -92,7 +93,6 @@ class Methods(db.Model):
     internal_id = db.Column(db.TEXT, primary_key=True)
     pdf_data = db.Column(BYTEA)
     pdf_metadata = db.Column(db.JSON)
-    sub_source = db.Column(db.TEXT)
     date_published = db.Column(db.TEXT)
     method_name = db.Column(db.TEXT)
     method_number = db.Column(db.TEXT)
