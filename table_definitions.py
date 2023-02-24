@@ -10,20 +10,17 @@ class Compounds(db.Model):
     __table_args__ = {'schema': 'spectrum_db'}
     dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
     casrn = db.Column(db.VARCHAR(32))
-    inchikey = db.Column(db.VARCHAR(27))
+    jchem_inchikey = db.Column(db.VARCHAR(27))
+    indigo_inchikey = db.Column(db.VARCHAR(27))
     preferred_name = db.Column(db.TEXT)
-    compound_image = db.Column(BYTEA)
     molecular_formula = db.Column(db.TEXT)
     molecular_weight = db.Column(db.REAL)
-    num_spectra = db.Column(db.INTEGER)
-    num_monographs = db.Column(db.INTEGER)
-    num_methods = db.Column(db.INTEGER)
 
     def get_row_contents(self):
         return {
-            "dtxsid":self.dtxsid, "casrn":self.casrn, "inchikey":self.inchikey, "preferred_name":self.preferred_name, 
-            "compound_image":self.compound_image, "molecular_formula":self.molecular_formula, "molecular_weight":self.molecular_weight,
-            "num_spectra":self.num_spectra, "num_monographs":self.num_monographs, "num_methods":self.num_methods
+            "dtxsid":self.dtxsid, "casrn":self.casrn, "jchem_inchikey":self.jchem_inchikey,
+            "indigo_inchikey":self.indigo_inchikey, "preferred_name":self.preferred_name, 
+            "molecular_formula":self.molecular_formula, "molecular_weight":self.molecular_weight
         }
     
 class Synonyms(db.Model):

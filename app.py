@@ -101,8 +101,8 @@ def get_dtxsid_for_search_term(search_term):
     elif search_type == SearchType.CompoundName:
         q = db.select(Compounds.dtxsid).filter(Compounds.preferred_name.ilike(search_term))
         results = db.session.execute(q).all()
+        # if no matches, check if it's a synonym
         if len(results) == 0:
-            # if no matches, check if it's a synonym
             q_syn = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_term))
             synonym_results = db.session.execute(q_syn).all()
             if len(synonym_results) > 0:
@@ -111,7 +111,7 @@ def get_dtxsid_for_search_term(search_term):
             dtxsid = results[0].dtxsid
     else: 
         if search_type == SearchType.InChIKey:
-            q = db.select(Compounds.dtxsid).filter(Compounds.inchikey == search_term)
+            q = db.select(Compounds.dtxsid).filter(Compounds.jchem_inchikey == search_term)
         elif search_type == SearchType.CASRN:
             q = db.select(Compounds.dtxsid).filter(Compounds.casrn == search_term)
         else:
@@ -386,7 +386,7 @@ def find_inchikeys(inchikey):
     exists, as well as a list of all InChIKeys with the same first block.
     """
     inchikey_first_block = inchikey[:14]
-    q = db.select(Compounds.inchikey, Compounds.preferred_name).filter(Compounds.inchikey.like(inchikey_first_block+"%"))
+    q = db.select(Compounds.jchem_inchikey, Compounds.preferred_name).filter(Compounds.jchem_inchikey.like(inchikey_first_block+"%"))
     results = [r._asdict() for r in db.session.execute(q).all()]
     inchikeys = [r["inchikey"] for r in results]
     inchikey_present = inchikey in inchikeys
