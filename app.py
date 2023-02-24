@@ -388,11 +388,11 @@ def find_inchikeys(inchikey):
     inchikey_first_block = inchikey[:14]
     q = db.select(Compounds.jchem_inchikey, Compounds.preferred_name).filter(Compounds.jchem_inchikey.like(inchikey_first_block+"%"))
     results = [r._asdict() for r in db.session.execute(q).all()]
-    inchikeys = [r["inchikey"] for r in results]
+    inchikeys = [r["jchem_inchikey"] for r in results]
     inchikey_present = inchikey in inchikeys
     return jsonify({
         "inchikey_present": inchikey_present,
-        "unique_inchikeys": sorted(results, key = lambda x: x["inchikey"])
+        "unique_inchikeys": sorted(results, key = lambda x: x["jchem_inchikey"])
     })
 
 
