@@ -9,6 +9,8 @@ import re
 from flask import Flask, jsonify, make_response, request
 from flask_cors import CORS
 import requests
+from sqlalchemy import func
+from sqlalchemy.exc import OperationalError as SQAOperationalError
 
 from table_definitions import db, Compounds, Contents, Methods, Monographs, \
     MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
@@ -111,7 +113,7 @@ def get_dtxsid_for_search_term(search_term):
             dtxsid = results[0].dtxsid
     else: 
         if search_type == SearchType.InChIKey:
-            q = db.select(Compounds.dtxsid).filter(Compounds.jchem_inchikey == search_term)
+            q = db.select(Compounds.dtxsid).filter((Compounds.jchem_inchikey==search_term) or (Compounds.indigo_inchikey==search_term))
         elif search_type == SearchType.CASRN:
             q = db.select(Compounds.dtxsid).filter(Compounds.casrn == search_term)
         else:
@@ -119,7 +121,7 @@ def get_dtxsid_for_search_term(search_term):
         results = db.session.execute(q).all()
         if len(results) > 0:
             dtxsid = results[0].dtxsid
-
+    
     return dtxsid
 
 
@@ -165,6 +167,19 @@ def clean_year(year_value):
     else:
         print(f"Issue with year value {year_value} -- unclear string format")
         return year_value
+
+
+def handle_closed_error(func):
+    """
+    Intended to be a decorator to catch errors caused by the database connection
+    being closed.  Not sure if I'm going to flesh this out or not.
+    """
+    def wrapper():
+        try:
+            func()
+        except SQAOperationalError as e:
+            print(e.message)
+    return wrapper
 
 
 @app.route("/")
@@ -289,11 +304,20 @@ def method_list():
     A list of dictionaries, each one corresponding to one method in the
     database.
     """
-    q = db.select(Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published,
+    """q = db.select(Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published,
                   Methods.matrix, Methods.analyte, RecordInfo.source, RecordInfo.spectrum_types,
-                  RecordInfo.description).join_from(Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id)
+                  RecordInfo.description).join_from(Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id)"""
+    
+    q = db.select(
+        Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix, Methods.analyte,
+        RecordInfo.source, RecordInfo.spectrum_types, RecordInfo.description, func.count(Contents.dtxsid)
+    ).join_from(
+        Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id
+    ).join_from(RecordInfo, Contents, RecordInfo.internal_id==Contents.internal_id).group_by(Methods.internal_id, RecordInfo.internal_id)
+
     results = [r._asdict() for r in db.session.execute(q).all()]
     results = [{**r, "year_published":clean_year(r["date_published"]), "methodology":';'.join(r["spectrum_types"])} for r in results]
+    
     return jsonify({"results": results})
 
 
@@ -363,7 +387,6 @@ def get_pdf_metadata(record_type, internal_id):
             "has_associated_spectra": data_row.get("has_associated_spectra", False)
         })
     else:
-        print("Error")
         return "Error: PDF name not found."
 
 
@@ -451,15 +474,15 @@ def find_similar_compounds(search_term, similarity_threshold=0.8):
     dtxsid = get_dtxsid_for_search_term(search_term)
 
     if dtxsid is None:
-        return None, {"response": False}
+        return {"searched_dtxsid": None, "found_dtxsids": None}
     
     BASE_URL = "https://ccte-api-ccd-dev.epa.gov/similar-compound/by-dtxsid/"
     response = requests.get(f"{BASE_URL}{dtxsid}/{similarity_threshold}")
     if response.status_code == 200:
-        return dtxsid, response.json()
+        return {"searched_dtxsid": dtxsid, "found_dtxsids": response.json()}
     else:
         print("Error: ", response.status_code)
-        return None, {"response": False}
+        return {"searched_dtxsid": dtxsid, "found_dtxsids": None}
 
 
 @app.route("/get_similar_methods/<search_term>")
@@ -470,7 +493,16 @@ def get_similar_methods(search_term):
     level is hardcoded here, and I currently have no plans to make it
     adjustable by the app.
     """
-    dtxsid, similar_compounds_json = find_similar_compounds(search_term, similarity_threshold=0.5)
+    similarity_search_results = find_similar_compounds(search_term, similarity_threshold=0.5)
+
+    dtxsid = similarity_search_results["searched_dtxsid"]
+    if dtxsid is None:
+        return jsonify({"results":None, "ids_to_method_names":None, "found_searched_compound": False})
+    
+    similar_compounds_json = similarity_search_results["found_dtxsids"]
+    if similar_compounds_json is None:
+        return jsonify({"results":None, "ids_to_method_names":None, "found_searched_compound": True})
+    
     similar_dtxsids = [sc["dtxsid"] for sc in similar_compounds_json]
     similarity_dict = {sc["dtxsid"]: sc["similarity"] for sc in similar_compounds_json}
 
@@ -492,11 +524,11 @@ def get_similar_methods(search_term):
     results = [{
             **r, "similarity": similarity_dict[r["dtxsid"]], "compound_name":dtxsid_names.get(r["dtxsid"]),
             "has_searched_compound": r["internal_id"] in methods_with_searched_compound,
-            "year_published": clean_year(r["date_published"])
+            "year_published": clean_year(r["date_published"]), "methodology": ", ".join(r["spectrum_types"])
         } for r in results]
     ids_to_method_names = {r["internal_id"]:r["method_name"] for r in results}
 
-    return jsonify({"results":results, "ids_to_method_names":ids_to_method_names})
+    return jsonify({"results":results, "ids_to_method_names":ids_to_method_names, "found_searched_compound": True})
 
 
 @app.route("/batch_search", methods=["POST"])

@@ -5,14 +5,12 @@ COMPOUNDS
 This table stores information about the compounds that are searchable in this database.  The information is pulled from DSSTox.
 - dtxsid: Substance ID used by EPA's DSSTox product.
 - casrn: Chemical Abstracts Service Registry Number.
-- inchikey: InChIKey string corresponding to the compound.
+- jchem_inchikey: JChem InChIKey corresponding to the compound.
+- indigo_inchikey: Indigo InChIKey corresponding to the compound.  Does not exist for all compounds, unlike the JChem InChIKey.
 - preferred_name: Name of the compound.  These are standardized to the EPA's preferred names as much as possible.
-- compound_image: Image of the compound.  (This column may be deleted later.)
+- compound_image: Image of the compound.
 - molecular_formula: Molecular formula of the compound.
 - molecular_weight: Weight of the compound, in Daltons.
-- num_spectra: Number of spectra in thr database for this compound.  Currently not being calculated or used.
-- num_monographs: Number of monographs describing this compound.  Currently not being calculated or used.
-- num_methods: Number of methods that contain this compound.  Currently not being calculated or used.
 
 
 SYNONYMS
@@ -33,7 +31,8 @@ This table covers general info that is associated with every kind of record in t
 - spectrum_types: A list of the spectrum/methodology types present in the record.
 - source: The source where the data was acquired from.  Note that this isn't necessarily the origin of the data, as some sources (e.g., MoNA) aggregate several other sources of data.
 - link: The URL where the original record can be found.
-- experimental: Boolean indicating whether the record is the result of experimental data (true) or not (false)
+- experimental: Boolean indicating whether the record is the result of experimental data (true) or not (false).  At the moment, this is expected to always be true, as the focus of the project is experimental records.
+- external_use_allowed: Whether the monograph will be displayable outside the EPA.  Currently not used by the app.
 - description: A description of the data in the record.  The exact contents of this string vary a lot, but generally, this field covers experimental parameters for spectra and summaries or abstracts for monographs and methods.
 - data_type: Indicates what kind of data this record is associated with.  Currently should be either "spectrum" or "PDF".
 - record_type: The kind of record that this entry represents -- either a spectrum, a monograph, or a method.
@@ -47,6 +46,7 @@ This table stores information specific to mass spectra whose spectra are stored 
 - spectral_entropy: A measurement of the quality of a spectrum, calculated using code based on MoNA's source code.  Will be missing values for spectra with one point (while the formula does actually give a valid value for this case -- zero -- it is not useful, and is stored as missing to be consistent with the normalized entropy below).
 - normalized_entropy: A measurement of the quality of a spectrum.  It is a scaling of the spectral entropy to try to offset the effects of having a large number of peaks in the data.
 - has_associated_method: A boolean indicating whether there is a method associated with this spectrum.
+- spectrum_metadata: A JSON document storing information about the spectrum, usually about the instrument and test conditions it was created under.
 
 
 SPECTRUM PDFS
@@ -55,18 +55,16 @@ This table contains information specific to PDFs that contain spectra that are s
 - pdf_data: The PDF file, stored as binary data.
 - pdf_metadata: A JSON document storing information about the PDF.
 - sub_source: Some sources include PDFs from other sources.  This field is used to denote that original source.
-- date_published: A string containing the publication date of the PDF.  The format of the dates is not guaranteed to be consistent between all monographs.
-- external_use_allowed: Whether the monograph will be displayable outside the EPA.  Currently not used by the app.
+- date_published: A string containing the publication date of the PDF.  The format of the dates is not guaranteed to be consistent between all document.
 
 
 MONOGRAPHS
 This table contains information specific to monographs stored in the database, as well as the monograph PDFs themselves.
 - internal_id: Same as above.
 - pdf_data: The PDF file, stored as binary data.
-- pdf_metadata: A JSON document storing information about the monograph.
+- pdf_metadata: A JSON document storing information about the monograph.  Fields in the metadata are not guaranteed to be consistent across all records.
 - sub_source: Some sources include monographs from other sources.  This field is used to denote that original source.
 - date_published: A string containing the publication date of the monograph.  The format of the dates is not guaranteed to be consistent between all monographs.
-- external_use_allowed: Whether the monograph will be displayable outside the EPA.  Currently not used by the app.
 - monograph_name: The name/title of the monograph.
 
 
@@ -74,15 +72,14 @@ METHODS
 This table contains information specific to methods stored in the database, as well as the method PDFs themselves.
 - internal_id: Same as above.
 - pdf_data: The PDF file, stored as binary data.
-- pdf_metadata: A JSON document storing metadata about the method.  There is currently no restriction on the 
-- sub_source: Some sources include methods from other sources.  This field is used to denote that original source.
+- pdf_metadata: A JSON document storing metadata about the method.  Fields in the metadata are not guaranteed to be consistent across all records.
 - date_published: A string containing the publication date of the method.  The format of the dates is not guaranteed to be consistent between all monographs.
-- external_use_allowed: Whether the method will be displayable outside the EPA.  Currently not used by the app.
 - method_name: The name/title of the methods.
 - method_number: A secondary identification number for the method.  Values in internal_id are currently generated by
 - analyte: A category of compounds that the method focuses on.
 - matrix: The matrix where the compound was discovered and/or analyzed in.
-- has_associated_spectra: A boolean indicating whether there are any spectra associated with this method
+- has_associated_spectra: A boolean indicating whether there are any spectra associated with this method.
+
 
 METHODS WITH SPECTRA
 This table pairs the internal IDs of methods with the spectra associated with them.  Spectra referenced in this table are assumed to have the spectrum actually in the database (not externally linked or in PDF form).
