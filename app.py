@@ -247,7 +247,10 @@ def retrieve_spectrum(internal_id):
     A JSON structure containing the information about the spectrum - entropies,
     SPLASH, and the spectrum itself.
     """
-    q = db.select(SpectrumData.spectrum, SpectrumData.splash, SpectrumData.normalized_entropy, SpectrumData.spectral_entropy, SpectrumData.has_associated_method).filter(SpectrumData.internal_id==internal_id)
+    q = db.select(
+            SpectrumData.spectrum, SpectrumData.splash, SpectrumData.normalized_entropy, SpectrumData.spectral_entropy,
+            SpectrumData.has_associated_method, SpectrumData.spectrum_metadata
+        ).filter(SpectrumData.internal_id==internal_id)
     data_row = db.session.execute(q).first()
     if data_row is not None:
         data_dict = data_row._asdict()
@@ -318,7 +321,7 @@ def method_list():
     results = [r._asdict() for r in db.session.execute(q).all()]
     results = [{**r, "year_published":clean_year(r["date_published"]), "methodology":';'.join(r["spectrum_types"])} for r in results]
     
-    return jsonify({"results": results})
+    return {"results": results}
 
 
 @app.route("/get_pdf/<record_type>/<internal_id>")
@@ -541,9 +544,11 @@ def batch_search():
     """
     dtxsid_list = request.get_json()["dtxsids"]
     q = db.select(
-            Contents.internal_id, Contents.dtxsid, RecordInfo.spectrum_types, RecordInfo.source, RecordInfo.link,
-            RecordInfo.record_type, RecordInfo.description
-        ).filter(Contents.dtxsid.in_(dtxsid_list)).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id)
+            Contents.internal_id, Contents.dtxsid, Compounds.casrn, Compounds.preferred_name, RecordInfo.spectrum_types,
+            RecordInfo.source, RecordInfo.link, RecordInfo.record_type, RecordInfo.description
+        ).filter(Contents.dtxsid.in_(dtxsid_list)).join_from(
+            Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
+        ).join_from(Contents, Compounds, Contents.dtxsid==Compounds.dtxsid)
     results = [c._asdict() for c in db.session.execute(q).all()]
 
     if len(results) > 0:
@@ -613,6 +618,31 @@ def get_spectrum_count_by_type():
             RecordInfo.spectrum_types.contains([spectrum_type]) & (RecordInfo.record_type == "Spectrum") & (Contents.dtxsid == dtxsid)
     ).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id)
     return jsonify({"count": len(db.session.execute(q).all())})
+
+
+@app.route("/compounds_for_ids/", methods=["POST"])
+def get_compounds_for_ids():
+    """
+    Function for retrieving a list of compounds with relevant information
+    contained in a list of record IDs.
+    """
+
+    internal_id_list = request.get_json()["internal_id_list"]
+    print(internal_id_list)
+
+    q = db.select(
+            Contents.dtxsid, Compounds.preferred_name, Compounds.casrn, Compounds.jchem_inchikey
+        ).filter(Contents.internal_id.in_(internal_id_list)).join_from(Contents, Compounds, Contents.dtxsid==Compounds.dtxsid).distinct()
+    results = [c._asdict() for c in db.session.execute(q).all()]
+
+    # construct the CSV as a string
+    f = io.StringIO("")
+    writer = csv.DictWriter(f, fieldnames=results[0].keys())
+    writer.writeheader()
+    writer.writerows(results)
+
+    return jsonify({"csv_string":f.getvalue()})
+
 
 
 
