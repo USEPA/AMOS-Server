@@ -9,6 +9,7 @@ class Compounds(db.Model):
     __tablename__ = "compounds"
     __table_args__ = {'schema': 'spectrum_db'}
     dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
+    dtxcid = db.Column(db.VARCHAR(32))
     casrn = db.Column(db.VARCHAR(32))
     jchem_inchikey = db.Column(db.VARCHAR(27))
     indigo_inchikey = db.Column(db.VARCHAR(27))
@@ -94,6 +95,7 @@ class Methods(db.Model):
     method_name = db.Column(db.TEXT)
     method_number = db.Column(db.TEXT)
     analyte = db.Column(db.TEXT)
+    chemical_class = db.Column(db.TEXT)
     matrix = db.Column(db.TEXT)
     has_associated_spectra = db.Column(db.BOOLEAN)
 

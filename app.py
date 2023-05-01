@@ -1,9 +1,9 @@
-from collections import Counter
+from collections import Counter, defaultdict
 import configparser
 import csv
 from enum import Enum
 import io
-import json
+from math import log
 import re
 
 from flask import Flask, jsonify, make_response, request
@@ -162,7 +162,7 @@ def clean_year(year_value):
         return int(year_value[:4])
     elif re.match("^[0-9]{4}$", year_value):
         return int(year_value)
-    elif re.match("^[0-9]+/[0-9]{4}$", year_value):
+    elif re.match("^([0-9]+/)?[0-9]+/[0-9]{4}$", year_value):
         return int(year_value[-4:])
     else:
         print(f"Issue with year value {year_value} -- unclear string format")
@@ -313,7 +313,7 @@ def method_list():
     
     q = db.select(
         Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix, Methods.analyte,
-        RecordInfo.source, RecordInfo.spectrum_types, RecordInfo.description, func.count(Contents.dtxsid)
+        Methods.chemical_class, RecordInfo.source, RecordInfo.spectrum_types, RecordInfo.description, func.count(Contents.dtxsid)
     ).join_from(
         Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id
     ).join_from(RecordInfo, Contents, RecordInfo.internal_id==Contents.internal_id).group_by(Methods.internal_id, RecordInfo.internal_id)
@@ -643,6 +643,45 @@ def get_compounds_for_ids():
 
     return jsonify({"csv_string":f.getvalue()})
 
+
+@app.route("/spectrum_search/", methods=["POST"])
+def spectrum_search():
+    request_json = request.get_json()
+    lower_mass_limit = request_json["lower_mass_limit"]
+    upper_mass_limit = request_json["upper_mass_limit"]
+    methodology = request.json["methodology"]
+
+    q = db.select(
+            Compounds.dtxsid, Compounds.dtxcid, Contents.internal_id, RecordInfo.description, SpectrumData.spectrum
+        ).filter(
+            Compounds.molecular_weight.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Spectrum") & RecordInfo.spectrum_types.any(methodology)
+        ).join_from(
+            Compounds, Contents, Compounds.dtxsid == Contents.dtxsid
+        ).join_from(
+            Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
+        ).join_from(
+            Contents, SpectrumData, Contents.internal_id==SpectrumData.internal_id
+        )
+    results = [c._asdict() for c in db.session.execute(q).all()]
+    return jsonify({"result_length":len(results), "results":results})
+
+
+def calculate_spectral_entropy(spectrum):
+    total_intensity = sum([i for mz, i in spectrum])
+    scaled_intensities = [i/total_intensity for mz, i in spectrum]
+    return sum([-1 * i * log(i) for i in scaled_intensities])
+
+
+def calculate_entropy_similarity(spectrum_a, spectrum_b):
+    combined_dict = defaultdict(list)
+    [combined_dict[mz].append(i) for mz, i in spectrum_a]
+    [combined_dict[mz].append(i) for mz, i in spectrum_b]
+    combined_spectrum = [[k, sum(v)] for k,v in combined_dict.items()]
+
+    sAB = calculate_spectral_entropy(combined_spectrum)
+    sA = calculate_spectral_entropy(spectrum_a)
+    sB = calculate_spectral_entropy(spectrum_b)
+    return 1 - (2 * sAB - sA - sB)/log(4)
 
 
 
