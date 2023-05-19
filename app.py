@@ -1,9 +1,8 @@
-from collections import Counter, defaultdict
+from collections import Counter
 import configparser
 import csv
 from enum import Enum
 import io
-from math import log
 import re
 
 from flask import Flask, jsonify, make_response, request
@@ -14,6 +13,7 @@ from sqlalchemy.exc import OperationalError as SQAOperationalError
 
 from table_definitions import db, Compounds, Contents, Methods, Monographs, \
     MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
+import util
 
 # load info for PostgreSQL access from external file
 config = configparser.ConfigParser()
@@ -64,23 +64,16 @@ def determine_search_type(search_term):
         return SearchType.CompoundName
 
 
-def get_dtxsid_for_search_term(search_term):
+@app.route("/get_substances_for_search_term/<search_term>")
+def get_substances_for_search_term(search_term):
     """
     Takes a string containing a search term, and tries to find a DTXSID that
-    matches it.  There are four cases, depending on what the search term looks
-    like:
+    matches it.
 
-    - If it's a DTXSID already, check to see if it exists in the database; if it
-    is there, return it.
-    - If it's a CASRN, check if something in the Compounds table has that CASRN,
-    and return the corresponding DTXSID if it is.
-    - If it's an InChIKey, check if something in the Compounds table has that
-    InChIKey, and return the corresponding DTXSID if it is.
-    - If it's a compound name, check if something in the Compounds table has
-    that name.  If not, see if the name appears in the Synonyms table.  If
-    either of those has a match, return the correpsonding DTXSID.
-
-    If no DTXSID is found, the function returns None.
+    If no DTXSID is found, the function returns None.  In the case of matching
+    either multiple synonyms or the first blocks of multiple InChIKeys, an
+    ambiguity variable will be passed indicating the issue, along with the data
+    necessary for the user to make a decision.
 
     Parameters
     ----------
@@ -93,36 +86,52 @@ def get_dtxsid_for_search_term(search_term):
     was found.
     """
     search_type = determine_search_type(search_term)
-    dtxsid = None   # default value
+    substances = None   # default value
+    ambiguity = None
+    q = db.select(Compounds)
 
     if search_type == SearchType.DTXSID:
-        q = db.select(Compounds.dtxsid).filter(Compounds.dtxsid == search_term)
-        results = db.session.execute(q).all()
-        if len(results) > 0:
-            dtxsid = search_term
-    elif search_type == SearchType.CompoundName:
-        q = db.select(Compounds.dtxsid).filter(Compounds.preferred_name.ilike(search_term))
-        results = db.session.execute(q).all()
-        # if no matches, check if it's a synonym
-        if len(results) == 0:
-            q_syn = db.select(Synonyms.dtxsid).filter(Synonyms.synonym.ilike(search_term))
-            synonym_results = db.session.execute(q_syn).all()
-            if len(synonym_results) > 0:
-                dtxsid = synonym_results[0].dtxsid
-        else:
-            dtxsid = results[0].dtxsid
-    else: 
-        if search_type == SearchType.InChIKey:
-            q = db.select(Compounds.dtxsid).filter((Compounds.jchem_inchikey==search_term) or (Compounds.indigo_inchikey==search_term))
-        elif search_type == SearchType.CASRN:
-            q = db.select(Compounds.dtxsid).filter(Compounds.casrn == search_term)
-        else:
-            raise ValueError("Invalid value for search type")
-        results = db.session.execute(q).all()
-        if len(results) > 0:
-            dtxsid = results[0].dtxsid
+        q = q.filter(Compounds.dtxsid == search_term)
+        results = db.session.execute(q).first()
+        if results:
+            substances = results[0].get_row_contents()
     
-    return dtxsid
+    elif search_type == SearchType.CompoundName:
+        q_name = q.filter(Compounds.preferred_name.ilike(search_term))
+        results = db.session.execute(q_name).first()
+        # if no matches, check if it's a synonym
+        if results:
+            substances = results[0].get_row_contents()
+        else:
+            q_syn = q.join_from(Synonyms, Compounds, Synonyms.dtxsid==Compounds.dtxsid).filter(Synonyms.synonym.ilike(search_term))
+            synonym_results = db.session.execute(q_syn).all()
+            if len(synonym_results) == 1:
+                substances = synonym_results[0].dtxsid
+            elif len(synonym_results) > 1:
+                substances = [r[0].get_row_contents() for r in synonym_results]
+                ambiguity = "synonym"
+    
+    elif search_type == SearchType.InChIKey:
+        inchikey_first_block = search_term[:14]
+        q = q.filter(Compounds.jchem_inchikey.like(inchikey_first_block+"%") | Compounds.indigo_inchikey.like(inchikey_first_block+"%"))
+        results = [r[0].get_row_contents() for r in db.session.execute(q).all()]
+        inchikey_present = any([r["jchem_inchikey"] == search_term for r in results]) or any([r["indigo_inchikey"] == search_term for r in results])
+        if inchikey_present and len(results) == 1:
+            substances = results[0][0].get_row_contents()
+        elif len(results) > 0:
+            substances = results
+            ambiguity = "inchikey"
+    
+    elif search_type == SearchType.CASRN:
+        q = q.filter(Compounds.casrn == search_term)
+        results = db.session.execute(q).first()
+        if results:
+            substances = results[0].get_row_contents()
+    
+    else:
+        raise ValueError("Invalid value for search type")
+    
+    return jsonify({"ambiguity": ambiguity, "substances": substances})
 
 
 def get_names_for_dtxsids(dtxsid_list):
@@ -136,52 +145,6 @@ def get_names_for_dtxsids(dtxsid_list):
     return names_for_dtxsids
 
 
-def clean_year(year_value):
-    """
-    Convenience function intended to take care of showing just the year of date
-    strings with various possible formats.
-
-    NOTE: unsure whether the behavior for unknown date format should be
-    just returning the value, or returning a blank or something.
-
-    Parameters
-    ----------
-    year_value : string
-        A date in string form.  Currently should be either a four-digit year or
-        a one/two-digit month followed by a four-digit year.
-
-    Returns
-    -------
-    Either None (if the input was None), the year (if the string could be
-    parsed), or the original value (if it couldn't be parsed).
-
-    """
-    if year_value is None:
-        return None
-    elif re.match("^[0-9]{4}-[01][0-9]-[0-3][0-9]$", year_value):
-        return int(year_value[:4])
-    elif re.match("^[0-9]{4}$", year_value):
-        return int(year_value)
-    elif re.match("^([0-9]+/)?[0-9]+/[0-9]{4}$", year_value):
-        return int(year_value[-4:])
-    else:
-        print(f"Issue with year value {year_value} -- unclear string format")
-        return year_value
-
-
-def handle_closed_error(func):
-    """
-    Intended to be a decorator to catch errors caused by the database connection
-    being closed.  Not sure if I'm going to flesh this out or not.
-    """
-    def wrapper():
-        try:
-            func()
-        except SQAOperationalError as e:
-            print(e.message)
-    return wrapper
-
-
 @app.route("/")
 def top_page():
     """
@@ -191,10 +154,10 @@ def top_page():
     return "<p>Hello, World!</p>"
 
 
-@app.route("/search/<search_term>")
-def search_results(search_term):
+@app.route("/search/<dtxsid>")
+def search_results(dtxsid):
     """
-    Endpoint for retrieving search results of a specified compound.
+    Endpoint for retrieving search results of a specified DTXSID.
 
     Parameters
     ----------
@@ -206,15 +169,6 @@ def search_results(search_term):
     A JSON structure containing a list of records from the database, as well as
     general information on the searched compound.
     """
-    dtxsid = get_dtxsid_for_search_term(search_term)
-    if dtxsid is None:
-        return jsonify({"no_compound_match": True})
-
-    # get_dtxsid_for_search_term should catch invalid DTXSIDs, so compound_info
-    # shouldn't need to be checked if it's empty
-    info_query = db.select(Compounds).filter(Compounds.dtxsid == dtxsid)
-    info_results = db.session.execute(info_query).all()
-    compound_info = info_results[0][0].get_row_contents()
 
     id_query = db.select(Contents.internal_id).filter(Contents.dtxsid == dtxsid)
     internal_ids = [ir.internal_id for ir in db.session.execute(id_query).all()]
@@ -229,7 +183,7 @@ def search_results(search_term):
             record_type_counts[record_type] = 0
     record_type_counts = {k.lower(): v for k,v in record_type_counts.items()}
 
-    return jsonify({"records":records, "compound_info":compound_info, "record_type_counts":record_type_counts})
+    return jsonify({"records":records, "record_type_counts":record_type_counts})
 
 
 @app.route("/get_spectrum/<internal_id>")
@@ -285,7 +239,7 @@ def monograph_list():
     """
     q = db.select(Monographs.internal_id, Monographs.monograph_name, Monographs.date_published, Monographs.sub_source)
     results = [r._asdict() for r in db.session.execute(q).all()]
-    results = [{**r, "year_published": clean_year(r["date_published"])} for r in results]
+    results = [{**r, "year_published": util.clean_year(r["date_published"])} for r in results]
     return jsonify({"results":results})
 
 
@@ -319,7 +273,7 @@ def method_list():
     ).join_from(RecordInfo, Contents, RecordInfo.internal_id==Contents.internal_id).group_by(Methods.internal_id, RecordInfo.internal_id)
 
     results = [r._asdict() for r in db.session.execute(q).all()]
-    results = [{**r, "year_published":clean_year(r["date_published"]), "methodology":';'.join(r["spectrum_types"])} for r in results]
+    results = [{**r, "year_published": util.clean_year(r["date_published"]), "methodology":';'.join(r["spectrum_types"])} for r in results]
     
     return {"results": results}
 
@@ -393,33 +347,6 @@ def get_pdf_metadata(record_type, internal_id):
         return "Error: PDF name not found."
 
 
-@app.route("/find_inchikeys/<inchikey>")
-def find_inchikeys(inchikey):
-    """
-    Locates and returns all InChIKeys whose first block matches the specified
-    key.  Searches of the database by InChIKey may be looking for a variant of
-    the compound instead of what they searched for, and another compound with a
-    different InChIKey may cover it.
-
-    Parameters
-    ----------
-    inchikey : string
-        The InChIKey being searched on.
-
-    Returns
-    -------
-    A JSON structure containing an indicator of whether the searched InChIKey
-    exists, as well as a list of all InChIKeys with the same first block.
-    """
-    inchikey_first_block = inchikey[:14]
-    q = db.select(Compounds.jchem_inchikey, Compounds.preferred_name).filter(Compounds.jchem_inchikey.like(inchikey_first_block+"%"))
-    results = [r._asdict() for r in db.session.execute(q).all()]
-    inchikeys = [r["jchem_inchikey"] for r in results]
-    inchikey_present = inchikey in inchikeys
-    return jsonify({
-        "inchikey_present": inchikey_present,
-        "unique_inchikeys": sorted(results, key = lambda x: x["jchem_inchikey"])
-    })
 
 
 @app.route("/find_dtxsids/<internal_id>")
@@ -451,8 +378,8 @@ def find_dtxsids(internal_id):
         return jsonify({"compound_list":[]})
 
 
-@app.route("/compound_similarity_search/<search_term>")
-def find_similar_compounds(search_term, similarity_threshold=0.8):
+@app.route("/compound_similarity_search/<dtxsid>")
+def find_similar_compounds(dtxsid, similarity_threshold=0.8):
     """
     Makes a call to an EPA-built API for compound similarity and returns the
     list of DTXSIDs of compounds with a similarity measure at or above the
@@ -474,40 +401,32 @@ def find_similar_compounds(search_term, similarity_threshold=0.8):
     A JSON structure containing a list of compound information.  This will be
     empty if no records were found.
     """
-    dtxsid = get_dtxsid_for_search_term(search_term)
 
-    if dtxsid is None:
-        return {"searched_dtxsid": None, "found_dtxsids": None}
-    
-    BASE_URL = "https://ccte-api-ccd-dev.epa.gov/similar-compound/by-dtxsid/"
+    #BASE_URL = "https://ccte-api-ccd-dev.epa.gov/similar-compound/by-dtxsid/"   <-- original endpoint
+    BASE_URL = "https://ccte-api-ccd.epa.gov/similar-compound/by-dtxsid/"   # <-- temporary(?) replacement
+    print(f"{BASE_URL}{dtxsid}/{similarity_threshold}")
     response = requests.get(f"{BASE_URL}{dtxsid}/{similarity_threshold}")
     if response.status_code == 200:
-        return {"searched_dtxsid": dtxsid, "found_dtxsids": response.json()}
+        return {"similar_substance_info": response.json()}
     else:
         print("Error: ", response.status_code)
-        return {"searched_dtxsid": dtxsid, "found_dtxsids": None}
+        return {"similar_substance_info": None}
 
 
-@app.route("/get_similar_methods/<search_term>")
-def get_similar_methods(search_term):
+@app.route("/get_similar_methods/<dtxsid>")
+def get_similar_methods(dtxsid):
     """
     Searches the database for all methods which contain at least one compound
     of sufficient similarity to the searched compound.  The searched similarity
     level is hardcoded here, and I currently have no plans to make it
     adjustable by the app.
     """
-    similarity_search_results = find_similar_compounds(search_term, similarity_threshold=0.5)
-
-    dtxsid = similarity_search_results["searched_dtxsid"]
-    if dtxsid is None:
-        return jsonify({"results":None, "ids_to_method_names":None, "found_searched_compound": False})
+    similar_substance_info = find_similar_compounds(dtxsid, similarity_threshold=0.5)["similar_substance_info"]
+    if similar_substance_info is None:
+        return jsonify({"results":None, "ids_to_method_names":None})
     
-    similar_compounds_json = similarity_search_results["found_dtxsids"]
-    if similar_compounds_json is None:
-        return jsonify({"results":None, "ids_to_method_names":None, "found_searched_compound": True})
-    
-    similar_dtxsids = [sc["dtxsid"] for sc in similar_compounds_json]
-    similarity_dict = {sc["dtxsid"]: sc["similarity"] for sc in similar_compounds_json}
+    similar_dtxsids = [ssi["dtxsid"] for ssi in similar_substance_info]
+    similarity_dict = {ssi["dtxsid"]: ssi["similarity"] for ssi in similar_substance_info}
 
     # add the actual DTXSID manually -- the case where there are methods for the DTXSID will likely be changed down the road
     similar_dtxsids.append(dtxsid)
@@ -516,7 +435,13 @@ def get_similar_methods(search_term):
     q = db.select(
             Contents.internal_id, Contents.dtxsid, RecordInfo.source, RecordInfo.spectrum_types,
             Methods.method_name, Methods.date_published
-        ).filter(Contents.dtxsid.in_(similar_dtxsids)).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id).join_from(Contents, Methods, Contents.internal_id==Methods.internal_id)
+        ).filter(
+            Contents.dtxsid.in_(similar_dtxsids)
+        ).join_from(
+            Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
+        ).join_from(
+            Contents, Methods, Contents.internal_id==Methods.internal_id
+        )
     results = [c._asdict() for c in db.session.execute(q).all()]
 
     methods_with_searched_compound = [r["internal_id"] for r in results if r["dtxsid"] == dtxsid]
@@ -527,11 +452,11 @@ def get_similar_methods(search_term):
     results = [{
             **r, "similarity": similarity_dict[r["dtxsid"]], "compound_name":dtxsid_names.get(r["dtxsid"]),
             "has_searched_compound": r["internal_id"] in methods_with_searched_compound,
-            "year_published": clean_year(r["date_published"]), "methodology": ", ".join(r["spectrum_types"])
+            "year_published": util.clean_year(r["date_published"]), "methodology": ", ".join(r["spectrum_types"])
         } for r in results]
     ids_to_method_names = {r["internal_id"]:r["method_name"] for r in results}
 
-    return jsonify({"results":results, "ids_to_method_names":ids_to_method_names, "found_searched_compound": True})
+    return jsonify({"results":results, "ids_to_method_names":ids_to_method_names})
 
 
 @app.route("/batch_search", methods=["POST"])
@@ -590,7 +515,13 @@ def method_with_spectra_search(search_type, internal_id):
     spectrum_q = db.select(MethodsWithSpectra.spectrum_id).filter(MethodsWithSpectra.method_id == method_id)
     spectrum_list = [c.spectrum_id for c in db.session.execute(spectrum_q).all()]
 
-    info_q = db.select(Contents.internal_id, Contents.dtxsid, Compounds.preferred_name).filter(Contents.internal_id.in_(spectrum_list)).join_from(Contents, Compounds, Contents.dtxsid==Compounds.dtxsid)
+    info_q = db.select(
+            Contents.internal_id, Contents.dtxsid, Compounds.preferred_name
+        ).filter(
+            Contents.internal_id.in_(spectrum_list)
+        ).join_from(
+            Contents, Compounds, Contents.dtxsid==Compounds.dtxsid
+        )
     info_entries = [c._asdict() for c in db.session.execute(info_q).all()]
     
     return jsonify({"method_id": method_id, "spectrum_ids": spectrum_list, "info": info_entries})
@@ -664,24 +595,6 @@ def spectrum_search():
         )
     results = [c._asdict() for c in db.session.execute(q).all()]
     return jsonify({"result_length":len(results), "results":results})
-
-
-def calculate_spectral_entropy(spectrum):
-    total_intensity = sum([i for mz, i in spectrum])
-    scaled_intensities = [i/total_intensity for mz, i in spectrum]
-    return sum([-1 * i * log(i) for i in scaled_intensities])
-
-
-def calculate_entropy_similarity(spectrum_a, spectrum_b):
-    combined_dict = defaultdict(list)
-    [combined_dict[mz].append(i) for mz, i in spectrum_a]
-    [combined_dict[mz].append(i) for mz, i in spectrum_b]
-    combined_spectrum = [[k, sum(v)] for k,v in combined_dict.items()]
-
-    sAB = calculate_spectral_entropy(combined_spectrum)
-    sA = calculate_spectral_entropy(spectrum_a)
-    sB = calculate_spectral_entropy(spectrum_b)
-    return 1 - (2 * sAB - sA - sB)/log(4)
 
 
 

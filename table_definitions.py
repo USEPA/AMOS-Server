@@ -28,7 +28,7 @@ class Synonyms(db.Model):
     __tablename__ = "synonyms"
     __table_args__ = {'schema': 'spectrum_db'}
     synonym = db.Column(db.TEXT, primary_key=True)
-    dtxsid = db.Column(db.VARCHAR(32))
+    dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
 
 class Contents(db.Model):
     __tablename__ = "contents"
@@ -71,7 +71,6 @@ class SpectrumPDFs(db.Model):
     pdf_metadata = db.Column(db.JSON)
     sub_source = db.Column(db.TEXT)
     date_published = db.Column(db.TEXT)
-    external_use_allowed = db.Column(db.BOOLEAN)
 
 
 class Monographs(db.Model):
