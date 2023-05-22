@@ -1,15 +1,12 @@
 from collections import Counter
 import configparser
-import csv
 from enum import Enum
-import io
 import re
 
 from flask import Flask, jsonify, make_response, request
 from flask_cors import CORS
 import requests
 from sqlalchemy import func
-from sqlalchemy.exc import OperationalError as SQAOperationalError
 
 from table_definitions import db, Compounds, Contents, Methods, Monographs, \
     MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
@@ -67,13 +64,13 @@ def determine_search_type(search_term):
 @app.route("/get_substances_for_search_term/<search_term>")
 def get_substances_for_search_term(search_term):
     """
-    Takes a string containing a search term, and tries to find a DTXSID that
-    matches it.
+    Takes a string containing a search term, and tries to find any DTXSIDs that
+    match it, returning them along with information about the substances.
 
-    If no DTXSID is found, the function returns None.  In the case of matching
-    either multiple synonyms or the first blocks of multiple InChIKeys, an
-    ambiguity variable will be passed indicating the issue, along with the data
-    necessary for the user to make a decision.
+    If no DTXSID is found, the function returns None.  If multiple synonyms or
+    the first blocks of multiple InChIKeys are matched, the ambiguity variable
+    will be passed indicating the issue, along with a list of the substances
+    and information about them.
 
     Parameters
     ----------
@@ -87,7 +84,7 @@ def get_substances_for_search_term(search_term):
     """
     search_type = determine_search_type(search_term)
     substances = None   # default value
-    ambiguity = None
+    ambiguity = None   # default value
     q = db.select(Compounds)
 
     if search_type == SearchType.DTXSID:
@@ -106,7 +103,7 @@ def get_substances_for_search_term(search_term):
             q_syn = q.join_from(Synonyms, Compounds, Synonyms.dtxsid==Compounds.dtxsid).filter(Synonyms.synonym.ilike(search_term))
             synonym_results = db.session.execute(q_syn).all()
             if len(synonym_results) == 1:
-                substances = synonym_results[0].dtxsid
+                substances = synonym_results[0][0].get_row_contents()
             elif len(synonym_results) > 1:
                 substances = [r[0].get_row_contents() for r in synonym_results]
                 ambiguity = "synonym"
@@ -166,8 +163,7 @@ def search_results(dtxsid):
 
     Returns
     -------
-    A JSON structure containing a list of records from the database, as well as
-    general information on the searched compound.
+    A JSON structure containing a list of records from the database.
     """
 
     id_query = db.select(Contents.internal_id).filter(Contents.dtxsid == dtxsid)
@@ -198,8 +194,7 @@ def retrieve_spectrum(internal_id):
 
     Returns
     -------
-    A JSON structure containing the information about the spectrum - entropies,
-    SPLASH, and the spectrum itself.
+    A JSON structure containing the information about the spectrum.
     """
     q = db.select(
             SpectrumData.spectrum, SpectrumData.splash, SpectrumData.normalized_entropy, SpectrumData.spectral_entropy,
@@ -247,10 +242,7 @@ def monograph_list():
 def method_list():
     """
     Endpoint for retrieving a list of all of the methods present in the
-    database.  The current Vue page using this is only displaying the year th
-    record was published, hence why the 'year_published' field is being
-    generated.  Similarly, the 'methodology' field is just a concatenation of
-    the spectrum types corresponding to the record.
+    database.
 
     Parameters
     ----------
@@ -261,9 +253,6 @@ def method_list():
     A list of dictionaries, each one corresponding to one method in the
     database.
     """
-    """q = db.select(Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published,
-                  Methods.matrix, Methods.analyte, RecordInfo.source, RecordInfo.spectrum_types,
-                  RecordInfo.description).join_from(Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id)"""
     
     q = db.select(
         Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix, Methods.analyte,
@@ -281,10 +270,20 @@ def method_list():
 @app.route("/get_pdf/<record_type>/<internal_id>")
 def get_pdf(record_type, internal_id):
     """
-    Retrieve a PDF from the database by the internal ID.  There are three
-    different tables that house PDFs -- one for methods, one for monographs, and
-    one for spectra stored as PDFs.  They are differentiated by the record_type
-    argument.
+    Retrieve a PDF from the database by the internal ID and type of record.
+
+    Parameters
+    ----------
+    record_type : string
+        A string indicating which kind of record is being retrieved.  Valid
+        values are 'monograph', 'method', and 'spectrum pdf'.
+    
+    internal_id : string
+        ID of the document in the database.
+
+    Returns
+    -------
+    The PDF being searched, in the form of an <iframe>-compatible element.
     """
     if record_type.lower() == "monograph":
         q = db.select(Monographs.pdf_data).filter(Monographs.internal_id==internal_id)
@@ -387,8 +386,8 @@ def find_similar_compounds(dtxsid, similarity_threshold=0.8):
 
     Parameters
     ----------
-    search_term : string
-        A name, CASRN, InChIKey, or DTXSID to search on.
+    dtxsid : string
+        The DTXSID to search on.
     
     similarity_threshold : float
         A value from 0 to 1, sent to an EPA API as a threshold for how similar
@@ -398,8 +397,7 @@ def find_similar_compounds(dtxsid, similarity_threshold=0.8):
 
     Returns
     -------
-    A JSON structure containing a list of compound information.  This will be
-    empty if no records were found.
+    A list of similar substances, or None if none were found.
     """
 
     #BASE_URL = "https://ccte-api-ccd-dev.epa.gov/similar-compound/by-dtxsid/"   <-- original endpoint
@@ -416,10 +414,20 @@ def find_similar_compounds(dtxsid, similarity_threshold=0.8):
 @app.route("/get_similar_methods/<dtxsid>")
 def get_similar_methods(dtxsid):
     """
-    Searches the database for all methods which contain at least one compound
-    of sufficient similarity to the searched compound.  The searched similarity
+    Searches the database for all methods which contain at least one substance
+    of sufficient similarity to the searched substance.  The searched similarity
     level is hardcoded here, and I currently have no plans to make it
     adjustable by the app.
+
+    Parameters
+    ----------
+    dtxsid : string
+        A DTXSID to search on.
+
+
+    Returns
+    -------
+    A JSON structure containing information on the related methods.
     """
     similar_substance_info = find_similar_compounds(dtxsid, similarity_threshold=0.5)["similar_substance_info"]
     if similar_substance_info is None:
@@ -466,6 +474,9 @@ def batch_search():
     database that contain those DTXSIDs.  If a record contains more than one of
     the searched DTXSIDs, then that record will appear once for each searched
     compound it contains.
+
+    The POST should contain a list of DTXSIDs in a corresponding "dtxsids"
+    element, but no other parameters are required.
     """
     dtxsid_list = request.get_json()["dtxsids"]
     q = db.select(
@@ -482,14 +493,9 @@ def batch_search():
             # if a record has no link, have it link back to the search page of the Vue app with the row preselected
             if r["link"] is None:
                 results[i]["link"] = f"{base_url}/search/{r['dtxsid']}?initial_row_selected={r['internal_id']}"
+        csv_string = util.make_csv_string(results)
 
-        # construct the CSV as a string
-        f = io.StringIO("")
-        writer = csv.DictWriter(f, fieldnames=results[0].keys())
-        writer.writeheader()
-        writer.writerows(results)
-
-        return jsonify({"csv_string":f.getvalue()})
+        return jsonify({"csv_string":csv_string})
     else:
         return jsonify({"csv_string":""})
 
@@ -565,14 +571,9 @@ def get_compounds_for_ids():
             Contents.dtxsid, Compounds.preferred_name, Compounds.casrn, Compounds.jchem_inchikey
         ).filter(Contents.internal_id.in_(internal_id_list)).join_from(Contents, Compounds, Contents.dtxsid==Compounds.dtxsid).distinct()
     results = [c._asdict() for c in db.session.execute(q).all()]
+    csv_string = util.make_csv_string(results)
 
-    # construct the CSV as a string
-    f = io.StringIO("")
-    writer = csv.DictWriter(f, fieldnames=results[0].keys())
-    writer.writeheader()
-    writer.writerows(results)
-
-    return jsonify({"csv_string":f.getvalue()})
+    return jsonify({"csv_string":csv_string})
 
 
 @app.route("/spectrum_search/", methods=["POST"])

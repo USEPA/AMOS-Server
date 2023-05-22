@@ -1,4 +1,6 @@
 from collections import defaultdict
+import csv
+import io
 from math import log
 import re
 
@@ -51,3 +53,11 @@ def calculate_entropy_similarity(spectrum_a, spectrum_b):
     sA = calculate_spectral_entropy(spectrum_a)
     sB = calculate_spectral_entropy(spectrum_b)
     return 1 - (2 * sAB - sA - sB)/log(4)
+
+
+def make_csv_string(data_rows):
+    f = io.StringIO("")
+    writer = csv.DictWriter(f, fieldnames=data_rows[0].keys())
+    writer.writeheader()
+    writer.writerows(data_rows)
+    return f.getvalue()
