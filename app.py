@@ -13,10 +13,9 @@ from table_definitions import db, Compounds, Contents, Methods, Monographs, \
 import util
 
 # load info for PostgreSQL access from external file
-config = configparser.ConfigParser()
-config.read("vars.ini")
-uname = config["POSTGRES_ACCESS"]["username"]
-pwd = config["POSTGRES_ACCESS"]["password"]
+#config = configparser.ConfigParser()
+uname = os.environ['AMOS_POSTGRES_USER']
+pwd = os.environ['AMOS_POSTGRES_PASSWORD']
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@v2626umcth819.rtord.epa.gov:5435/greg"
