@@ -1,5 +1,4 @@
-from collections import Counter
-import configparser
+from collections import Counter, defaultdict
 from enum import Enum
 import re
 import os
@@ -13,8 +12,7 @@ from table_definitions import db, Compounds, Contents, Methods, Monographs, \
     MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
 import util
 
-# load info for PostgreSQL access from external file
-#config = configparser.ConfigParser()
+# load info for PostgreSQL access
 uname = os.environ['AMOS_POSTGRES_USER']
 pwd = os.environ['AMOS_POSTGRES_PASSWORD']
 
@@ -256,13 +254,24 @@ def method_list():
     
     q = db.select(
         Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix, Methods.analyte,
-        Methods.chemical_class, RecordInfo.source, RecordInfo.spectrum_types, RecordInfo.description, func.count(Contents.dtxsid)
+        Methods.chemical_class, Methods.pdf_metadata, RecordInfo.source, RecordInfo.spectrum_types, RecordInfo.description,
+        func.count(Contents.dtxsid)
     ).join_from(
         Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id
-    ).join_from(RecordInfo, Contents, RecordInfo.internal_id==Contents.internal_id).group_by(Methods.internal_id, RecordInfo.internal_id)
+    ).join_from(
+        RecordInfo, Contents, RecordInfo.internal_id==Contents.internal_id
+    ).group_by(
+        Methods.internal_id, RecordInfo.internal_id
+    )
 
     results = [r._asdict() for r in db.session.execute(q).all()]
     results = [{**r, "year_published": util.clean_year(r["date_published"]), "methodology":';'.join(r["spectrum_types"])} for r in results]
+    for r in results:
+        if pm := r.get("pdf_metadata"):
+            r["author"] = pm.get("Author", None)
+            del r["pdf_metadata"]
+        else:
+            r["author"] = None
     
     return {"results": results}
 
@@ -402,7 +411,6 @@ def find_similar_compounds(dtxsid, similarity_threshold=0.8):
 
     #BASE_URL = "https://ccte-api-ccd-dev.epa.gov/similar-compound/by-dtxsid/"   <-- original endpoint
     BASE_URL = "https://ccte-api-ccd.epa.gov/similar-compound/by-dtxsid/"   # <-- temporary(?) replacement
-    print(f"{BASE_URL}{dtxsid}/{similarity_threshold}")
     response = requests.get(f"{BASE_URL}{dtxsid}/{similarity_threshold}")
     if response.status_code == 200:
         return {"similar_substance_info": response.json()}
@@ -464,7 +472,10 @@ def get_similar_methods(dtxsid):
         } for r in results]
     ids_to_method_names = {r["internal_id"]:r["method_name"] for r in results}
 
-    return jsonify({"results":results, "ids_to_method_names":ids_to_method_names})
+    dtxsid_counts = Counter([r["dtxsid"] for r in results])
+    dtxsid_counts = [{"dtxsid": k, "num_methods": v, "preferred_name": dtxsid_names.get(k), "similarity": similarity_dict[k]} for k, v in dtxsid_counts.items()]
+
+    return jsonify({"results":results, "ids_to_method_names":ids_to_method_names, "dtxsid_counts":dtxsid_counts})
 
 
 @app.route("/batch_search", methods=["POST"])
@@ -596,6 +607,42 @@ def spectrum_search():
         )
     results = [c._asdict() for c in db.session.execute(q).all()]
     return jsonify({"result_length":len(results), "results":results})
+
+
+@app.route("/record_counts_by_dtxsid/", methods=["POST"])
+def get_record_counts_by_dtxsid():
+    dtxsid_list = request.get_json()["dtxsids"]
+    q = db.select(Contents.dtxsid, RecordInfo.record_type, func.count(RecordInfo.internal_id)).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id).filter(Contents.dtxsid.in_(dtxsid_list)).group_by(Contents.dtxsid, RecordInfo.record_type)
+    results = [c._asdict() for c in db.session.execute(q).all()]
+    result_dict = defaultdict(dict)
+    for r in results:
+        result_dict[r["dtxsid"]].update({r["record_type"]: r["count"]})
+    return jsonify(result_dict)
+
+
+@app.route("/max_similarity_by_dtxsid/", methods=["POST"])
+def max_similarity_by_dtxsid():
+    dtxsids = request.get_json()["dtxsids"]
+    if type(dtxsids) == str:
+        dtxsids = [dtxsids]
+    user_spectrum = request.get_json()["spectrum"]
+    q = db.select(Contents.dtxsid, RecordInfo.internal_id, SpectrumData.spectrum).filter(
+        (Contents.dtxsid.in_(dtxsids)) & (RecordInfo.data_type == "Spectrum")
+    ).join_from(
+        Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
+    ).join_from(
+        Contents, SpectrumData, Contents.internal_id==SpectrumData.internal_id
+    )
+    results = [c._asdict() for c in db.session.execute(q).all()]
+
+    compound_dict = {d:None for d in dtxsids}
+    for r in results:
+        similarity = util.calculate_entropy_similarity(user_spectrum, r["spectrum"])
+        if compound_dict[r["dtxsid"]] is None or compound_dict[r["dtxsid"]] < similarity:
+            compound_dict[r["dtxsid"]] = similarity
+
+
+    return jsonify({"results":compound_dict})
 
 
 
