@@ -571,8 +571,8 @@ def get_spectrum_count_by_type():
 @app.route("/compounds_for_ids/", methods=["POST"])
 def get_compounds_for_ids():
     """
-    Function for retrieving a list of compounds with relevant information
-    contained in a list of record IDs.
+    Accepts a list of internal_ids (via POST) and returns a deduplicated list compounds
+    that appear in those records.
     """
 
     internal_id_list = request.get_json()["internal_id_list"]
@@ -611,6 +611,11 @@ def spectrum_search():
 
 @app.route("/record_counts_by_dtxsid/", methods=["POST"])
 def get_record_counts_by_dtxsid():
+    """
+    Takes a list of DTXSIDs as the POST argument, and for each DTXSID, it
+    returns a dictionary containing the counts of record types that are present
+    in the database.
+    """
     dtxsid_list = request.get_json()["dtxsids"]
     q = db.select(Contents.dtxsid, RecordInfo.record_type, func.count(RecordInfo.internal_id)).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id).filter(Contents.dtxsid.in_(dtxsid_list)).group_by(Contents.dtxsid, RecordInfo.record_type)
     results = [c._asdict() for c in db.session.execute(q).all()]
@@ -622,6 +627,15 @@ def get_record_counts_by_dtxsid():
 
 @app.route("/max_similarity_by_dtxsid/", methods=["POST"])
 def max_similarity_by_dtxsid():
+    """
+    This endpoint allows a user to submit a list of DTXSIDs and a spectrum.  In
+    response, the user will get back the DTXSIDs mapped to similarity scores.
+    The scores will be the highest similarity score computed on the user-
+    supplied spectrum and all spectra in this database for that DTXSID.  If no
+    spectra were found, the DTXSID will map to None.
+    
+    This access point is intended to be used by CFMID.
+    """
     dtxsids = request.get_json()["dtxsids"]
     if type(dtxsids) == str:
         dtxsids = [dtxsids]
