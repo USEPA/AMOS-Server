@@ -8,7 +8,7 @@ from flask_cors import CORS
 import requests
 from sqlalchemy import func
 
-from table_definitions import db, Compounds, Contents, Methods, Monographs, \
+from table_definitions import db, Compounds, Contents, FactSheets, Methods, \
     MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
 import util
 
@@ -17,7 +17,7 @@ uname = os.environ['AMOS_POSTGRES_USER']
 pwd = os.environ['AMOS_POSTGRES_PASSWORD']
 
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@v2626umcth819.rtord.epa.gov:5435/greg"
+app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@ccte-pgsql-dev.epa.gov:5432/dev_poc"
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = "secretkey"
@@ -166,13 +166,13 @@ def search_results(dtxsid):
 
     id_query = db.select(Contents.internal_id).filter(Contents.dtxsid == dtxsid)
     internal_ids = [ir.internal_id for ir in db.session.execute(id_query).all()]
-    record_query = db.select(RecordInfo.source, RecordInfo.internal_id, RecordInfo.link, RecordInfo.record_type, RecordInfo.spectrum_types,
+    record_query = db.select(RecordInfo.source, RecordInfo.internal_id, RecordInfo.link, RecordInfo.record_type, RecordInfo.methodologies,
                        RecordInfo.data_type, RecordInfo.description).filter(RecordInfo.internal_id.in_(internal_ids))
     records = [r._asdict() for r in db.session.execute(record_query)]
 
     result_record_types = [r["record_type"] for r in records]
     record_type_counts = Counter(result_record_types)
-    for record_type in ["Method", "Monograph", "Spectrum"]:
+    for record_type in ["Method", "Fact Sheet", "Spectrum"]:
         if record_type not in record_type_counts:
             record_type_counts[record_type] = 0
     record_type_counts = {k.lower(): v for k,v in record_type_counts.items()}
@@ -213,10 +213,10 @@ def retrieve_spectrum(internal_id):
         return "Error: invalid internal id."
 
 
-@app.route("/monograph_list")
-def monograph_list():
+@app.route("/fact_sheet_list")
+def fact_sheet_list():
     """
-    Endpoint for retrieving a list of all of the monographs present in the
+    Endpoint for retrieving a list of all of the fact sheets present in the
     database.  The current Vue page using this is only displaying the year th
     record was published, hence why the 'year_published' field is being
     generated.
@@ -227,10 +227,10 @@ def monograph_list():
 
     Returns
     -------
-    A list of dictionaries, each one corresponding to one monograph record in
-    the database.
+    A list of dictionaries, each one corresponding to one fact sheet in the
+    database.
     """
-    q = db.select(Monographs.internal_id, Monographs.monograph_name, Monographs.date_published, Monographs.sub_source)
+    q = db.select(FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.date_published, FactSheets.sub_source)
     results = [r._asdict() for r in db.session.execute(q).all()]
     results = [{**r, "year_published": util.clean_year(r["date_published"])} for r in results]
     return jsonify({"results":results})
@@ -254,7 +254,7 @@ def method_list():
     
     q = db.select(
         Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix, Methods.analyte,
-        Methods.chemical_class, Methods.pdf_metadata, RecordInfo.source, RecordInfo.spectrum_types, RecordInfo.description,
+        Methods.chemical_class, Methods.pdf_metadata, RecordInfo.source, RecordInfo.methodologies, RecordInfo.description,
         func.count(Contents.dtxsid)
     ).join_from(
         Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id
@@ -265,7 +265,7 @@ def method_list():
     )
 
     results = [r._asdict() for r in db.session.execute(q).all()]
-    results = [{**r, "year_published": util.clean_year(r["date_published"]), "methodology":';'.join(r["spectrum_types"])} for r in results]
+    results = [{**r, "year_published": util.clean_year(r["date_published"]), "methodology":';'.join(r["methodologies"])} for r in results]
     for r in results:
         if pm := r.get("pdf_metadata"):
             r["author"] = pm.get("Author", None)
@@ -285,7 +285,7 @@ def get_pdf(record_type, internal_id):
     ----------
     record_type : string
         A string indicating which kind of record is being retrieved.  Valid
-        values are 'monograph', 'method', and 'spectrum pdf'.
+        values are 'fact sheet', 'method', and 'spectrum pdf'.
     
     internal_id : string
         ID of the document in the database.
@@ -294,8 +294,8 @@ def get_pdf(record_type, internal_id):
     -------
     The PDF being searched, in the form of an <iframe>-compatible element.
     """
-    if record_type.lower() == "monograph":
-        q = db.select(Monographs.pdf_data).filter(Monographs.internal_id==internal_id)
+    if record_type.lower() == "fact sheet":
+        q = db.select(FactSheets.pdf_data).filter(FactSheets.internal_id==internal_id)
     elif record_type.lower() == "method":
         q = db.select(Methods.pdf_data).filter(Methods.internal_id==internal_id)
     elif record_type.lower() == "spectrum pdf":
@@ -317,7 +317,7 @@ def get_pdf(record_type, internal_id):
 @app.route("/get_pdf_metadata/<record_type>/<internal_id>")
 def get_pdf_metadata(record_type, internal_id):
     """
-    Retrieves metadata associated with a PDF.  Both monographs and methods have
+    Retrieves metadata associated with a PDF.  Both fact sheets and methods have
     associated metadata, so this uses the record_type argument to differentiate
     between them.
 
@@ -325,7 +325,7 @@ def get_pdf_metadata(record_type, internal_id):
     ----------
     record_type : string
         A string indicating which kind of record is being retrieved.  Valid
-        values are 'monograph' and 'method'.
+        values are 'fact sheet' and 'method'.
     
     internal_id : string
         ID of the document in the database.
@@ -335,8 +335,8 @@ def get_pdf_metadata(record_type, internal_id):
     A JSON structure containing the metadata, the name, and whether or not the
     method has associated spectra.
     """
-    if record_type.lower() == "monograph":
-        q = db.select(Monographs.monograph_name.label("doc_name"), Monographs.pdf_metadata).filter(Monographs.internal_id==internal_id)
+    if record_type.lower() == "fact sheet":
+        q = db.select(FactSheets.fact_sheet_name.label("doc_name"), FactSheets.pdf_metadata).filter(FactSheets.internal_id==internal_id)
     elif record_type.lower() == "method":
         q = db.select(Methods.method_name.label("doc_name"), Methods.pdf_metadata, Methods.has_associated_spectra).filter(Methods.internal_id==internal_id)
     else:
@@ -362,7 +362,7 @@ def find_dtxsids(internal_id):
     """
     Returns a list of DTXSIDs associated with the specified internal ID, along
     with additional compound information.  This is mostly used for pulling back
-    information on the compounds listed in a method or monograph.
+    information on the compounds listed in a method or fact sheet.
 
     Parameters
     ----------
@@ -449,7 +449,7 @@ def get_similar_methods(dtxsid):
     similarity_dict[dtxsid] = 1
 
     q = db.select(
-            Contents.internal_id, Contents.dtxsid, RecordInfo.source, RecordInfo.spectrum_types,
+            Contents.internal_id, Contents.dtxsid, RecordInfo.source, RecordInfo.methodologies,
             Methods.method_name, Methods.date_published
         ).filter(
             Contents.dtxsid.in_(similar_dtxsids)
@@ -468,7 +468,7 @@ def get_similar_methods(dtxsid):
     results = [{
             **r, "similarity": similarity_dict[r["dtxsid"]], "compound_name":dtxsid_names.get(r["dtxsid"]),
             "has_searched_compound": r["internal_id"] in methods_with_searched_compound,
-            "year_published": util.clean_year(r["date_published"]), "methodology": ", ".join(r["spectrum_types"])
+            "year_published": util.clean_year(r["date_published"]), "methodology": ", ".join(r["methodologies"])
         } for r in results]
     ids_to_method_names = {r["internal_id"]:r["method_name"] for r in results}
 
@@ -491,7 +491,7 @@ def batch_search():
     """
     dtxsid_list = request.get_json()["dtxsids"]
     q = db.select(
-            Contents.internal_id, Contents.dtxsid, Compounds.casrn, Compounds.preferred_name, RecordInfo.spectrum_types,
+            Contents.internal_id, Contents.dtxsid, Compounds.casrn, Compounds.preferred_name, RecordInfo.methodologies,
             RecordInfo.source, RecordInfo.link, RecordInfo.record_type, RecordInfo.description
         ).filter(Contents.dtxsid.in_(dtxsid_list)).join_from(
             Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
@@ -563,7 +563,7 @@ def get_spectrum_count_by_type():
     spectrum_type = request.get_json()["spectrum_type"]
 
     q = db.select(Contents.internal_id).filter(
-            RecordInfo.spectrum_types.contains([spectrum_type]) & (RecordInfo.record_type == "Spectrum") & (Contents.dtxsid == dtxsid)
+            RecordInfo.methodologies.contains([spectrum_type]) & (RecordInfo.record_type == "Spectrum") & (Contents.dtxsid == dtxsid)
     ).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id)
     return jsonify({"count": len(db.session.execute(q).all())})
 
@@ -597,7 +597,7 @@ def spectrum_search():
     q = db.select(
             Compounds.dtxsid, Compounds.dtxcid, Contents.internal_id, RecordInfo.description, SpectrumData.spectrum
         ).filter(
-            Compounds.molecular_weight.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Spectrum") & RecordInfo.spectrum_types.any(methodology)
+            Compounds.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Spectrum") & RecordInfo.methodologies.any(methodology)
         ).join_from(
             Compounds, Contents, Compounds.dtxsid == Contents.dtxsid
         ).join_from(

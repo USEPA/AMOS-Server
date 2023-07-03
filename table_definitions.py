@@ -7,7 +7,7 @@ db = SQLAlchemy()
 
 class Compounds(db.Model):
     __tablename__ = "compounds"
-    __table_args__ = {'schema': 'spectrum_db'}
+    __table_args__ = {'schema': 'amos'}
     dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
     dtxcid = db.Column(db.VARCHAR(32))
     casrn = db.Column(db.VARCHAR(32))
@@ -15,33 +15,33 @@ class Compounds(db.Model):
     indigo_inchikey = db.Column(db.VARCHAR(27))
     preferred_name = db.Column(db.TEXT)
     molecular_formula = db.Column(db.TEXT)
-    molecular_weight = db.Column(db.REAL)
+    monoisotopic_mass = db.Column(db.REAL)
 
     def get_row_contents(self):
         return {
             "dtxsid":self.dtxsid, "casrn":self.casrn, "jchem_inchikey":self.jchem_inchikey,
             "indigo_inchikey":self.indigo_inchikey, "preferred_name":self.preferred_name, 
-            "molecular_formula":self.molecular_formula, "molecular_weight":self.molecular_weight
+            "molecular_formula":self.molecular_formula, "monoisotopic_mass":self.monoisotopic_mass
         }
     
 class Synonyms(db.Model):
     __tablename__ = "synonyms"
-    __table_args__ = {'schema': 'spectrum_db'}
+    __table_args__ = {'schema': 'amos'}
     synonym = db.Column(db.TEXT, primary_key=True)
     dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
 
 class Contents(db.Model):
     __tablename__ = "contents"
-    __table_args__ = {'schema': 'spectrum_db'}
+    __table_args__ = {'schema': 'amos'}
     dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
     internal_id = db.Column(db.TEXT, primary_key=True)
 
 
 class RecordInfo(db.Model):
     __tablename__ = "record_info"
-    __table_args__ = {'schema': 'spectrum_db'}
+    __table_args__ = {'schema': 'amos'}
     internal_id = db.Column(db.TEXT, primary_key=True)
-    spectrum_types = db.Column(ARRAY(db.VARCHAR(32)))
+    methodologies = db.Column(ARRAY(db.VARCHAR(32)))
     source = db.Column(db.VARCHAR(64))
     link = db.Column(db.TEXT)
     experimental = db.Column(db.BOOLEAN)
@@ -53,7 +53,7 @@ class RecordInfo(db.Model):
 
 class SpectrumData(db.Model):
     __tablename__ = "spectrum_data"
-    __table_args__ = {'schema': 'spectrum_db'}
+    __table_args__ = {'schema': 'amos'}
     internal_id = db.Column(db.TEXT, primary_key=True)
     splash = db.Column(db.VARCHAR(45))
     spectrum = db.Column(ARRAY(db.REAL, dimensions=2))
@@ -65,7 +65,7 @@ class SpectrumData(db.Model):
 
 class SpectrumPDFs(db.Model):
     __tablename__ = "spectrum_pdfs"
-    __table_args__ = {'schema': 'spectrum_db'}
+    __table_args__ = {'schema': 'amos'}
     internal_id = db.Column(db.TEXT, primary_key=True)
     pdf_data = db.Column(BYTEA)
     pdf_metadata = db.Column(db.JSON)
@@ -73,20 +73,20 @@ class SpectrumPDFs(db.Model):
     date_published = db.Column(db.TEXT)
 
 
-class Monographs(db.Model):
-    __tablename__ = "monographs"
-    __table_args__ = {'schema': 'spectrum_db'}
+class FactSheets(db.Model):
+    __tablename__ = "fact_sheets"
+    __table_args__ = {'schema': 'amos'}
     internal_id = db.Column(db.TEXT, primary_key=True)
     pdf_data = db.Column(BYTEA)
     pdf_metadata = db.Column(db.JSON)
     sub_source = db.Column(db.TEXT)
     date_published = db.Column(db.TEXT)
-    monograph_name = db.Column(db.TEXT)
+    fact_sheet_name = db.Column(db.TEXT)
 
 
 class Methods(db.Model):
     __tablename__ = "methods"
-    __table_args__ = {'schema': 'spectrum_db'}
+    __table_args__ = {'schema': 'amos'}
     internal_id = db.Column(db.TEXT, primary_key=True)
     pdf_data = db.Column(BYTEA)
     pdf_metadata = db.Column(db.JSON)
@@ -100,6 +100,6 @@ class Methods(db.Model):
 
 class MethodsWithSpectra(db.Model):
     __tablename__ = "methods_with_spectra"
-    __table_args__ = {'schema': 'spectrum_db'}
+    __table_args__ = {'schema': 'amos'}
     spectrum_id = db.Column(db.TEXT, primary_key=True)
     method_id = db.Column(db.TEXT)
