@@ -50,6 +50,14 @@ class RecordInfo(db.Model):
     data_type = db.Column(db.VARCHAR(32))
     record_type = db.Column(db.VARCHAR(32))
 
+    def get_row_contents(self):
+        return {
+            "internal_id": self.internal_id, "methodologies": self.methodologies,
+            "source": self.source, "link": self.link, "experimental": self.experimental,
+            "external_use_allowed": self.external_use_allowed, "description": self.description,
+            "data_type": self.data_type, "record_type": self.record_type
+        }
+
 
 class SpectrumData(db.Model):
     __tablename__ = "spectrum_data"

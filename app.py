@@ -8,6 +8,7 @@ from flask_cors import CORS
 import requests
 from sqlalchemy import func
 
+import spectrum
 from table_definitions import db, Compounds, Contents, FactSheets, Methods, \
     MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
 import util
@@ -112,7 +113,7 @@ def get_substances_for_search_term(search_term):
         results = [r[0].get_row_contents() for r in db.session.execute(q).all()]
         inchikey_present = any([r["jchem_inchikey"] == search_term for r in results]) or any([r["indigo_inchikey"] == search_term for r in results])
         if inchikey_present and len(results) == 1:
-            substances = results[0][0].get_row_contents()
+            substances = results[0]
         elif len(results) > 0:
             substances = results
             ambiguity = "inchikey"
@@ -576,7 +577,6 @@ def get_compounds_for_ids():
     """
 
     internal_id_list = request.get_json()["internal_id_list"]
-    print(internal_id_list)
 
     q = db.select(
             Contents.dtxsid, Compounds.preferred_name, Compounds.casrn, Compounds.jchem_inchikey
@@ -587,17 +587,24 @@ def get_compounds_for_ids():
     return jsonify({"csv_string":csv_string})
 
 
-@app.route("/spectrum_search/", methods=["POST"])
-def spectrum_search():
+@app.route("/spectrum_similarity_search/", methods=["POST"])
+def spectrum_similarity_search():
     request_json = request.get_json()
     lower_mass_limit = request_json["lower_mass_limit"]
     upper_mass_limit = request_json["upper_mass_limit"]
     methodology = request.json["methodology"]
+    user_spectrum = request.json["spectrum"]
+    
+    results = spectrum_search(lower_mass_limit, upper_mass_limit, methodology)
+    results = [{**r, "similarity": spectrum.calculate_entropy_similarity(r["spectrum"], user_spectrum)} for r in results]
+    return jsonify({"result_length":len(results), "results":results})
 
+
+def spectrum_search(lower_mass_limit, upper_mass_limit, methodology=None):
     q = db.select(
             Compounds.dtxsid, Compounds.dtxcid, Contents.internal_id, RecordInfo.description, SpectrumData.spectrum
         ).filter(
-            Compounds.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Spectrum") & RecordInfo.methodologies.any(methodology)
+            Compounds.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Spectrum")
         ).join_from(
             Compounds, Contents, Compounds.dtxsid == Contents.dtxsid
         ).join_from(
@@ -605,8 +612,29 @@ def spectrum_search():
         ).join_from(
             Contents, SpectrumData, Contents.internal_id==SpectrumData.internal_id
         )
+    if methodology:
+        q = q.filter(RecordInfo.methodologies.any(methodology))
     results = [c._asdict() for c in db.session.execute(q).all()]
-    return jsonify({"result_length":len(results), "results":results})
+    return results
+
+
+@app.route("/spectral_entropy/", methods=["POST"])
+def spectral_entropy():
+    """
+    Calculates the spectral entropy for a single spectrum.
+    """
+    entropy = spectrum.calculate_spectral_entropy(request.get_json()["spectrum"])
+    return jsonify({"entropy": entropy})
+
+
+@app.route("/entropy_similarity/", methods=["POST"])
+def entropy_similarity():
+    """
+    Calculates the entropy similarity for two spectra.
+    """
+    post_data = request.get_json()
+    similarity = spectrum.calculate_entropy_similarity(post_data["spectrum_1"], post_data["spectrum_2"])
+    return jsonify({"similarity": similarity})
 
 
 @app.route("/record_counts_by_dtxsid/", methods=["POST"])
@@ -651,12 +679,22 @@ def max_similarity_by_dtxsid():
 
     compound_dict = {d:None for d in dtxsids}
     for r in results:
-        similarity = util.calculate_entropy_similarity(user_spectrum, r["spectrum"])
+        similarity = spectrum.calculate_entropy_similarity(user_spectrum, r["spectrum"])
         if compound_dict[r["dtxsid"]] is None or compound_dict[r["dtxsid"]] < similarity:
             compound_dict[r["dtxsid"]] = similarity
 
 
     return jsonify({"results":compound_dict})
+
+
+@app.route("/get_info_by_id/<internal_id>")
+def get_info_by_id(internal_id):
+    q = db.select(RecordInfo).filter(RecordInfo.internal_id == internal_id)
+    result = db.session.execute(q).first()
+    if result:
+        return jsonify({"result": result[0].get_row_contents()})
+    else:
+        return jsonify({"result": None})
 
 
 
