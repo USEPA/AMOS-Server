@@ -12,6 +12,21 @@ import spectrum
 from table_definitions import db, Compounds, Contents, FactSheets, Methods, \
     MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
 import util
+import sentry_sdk
+from sentry_sdk.integrations.flask import FlaskIntegration
+
+# Integrating Sentry into Amos
+sentry_sdk.init(
+    dsn="https://712871757f0243ee8370d9558bfff1ac@ccte-app-monitoring.epa.gov/13",
+    integrations=[
+        FlaskIntegration(),
+    ],
+
+    # Set traces_sample_rate to 1.0 to capture 100%
+    # of transactions for performance monitoring.
+    # We recommend adjusting this value in production.
+    traces_sample_rate=1.0
+)
 
 # load info for PostgreSQL access
 uname = os.environ['AMOS_POSTGRES_USER']
