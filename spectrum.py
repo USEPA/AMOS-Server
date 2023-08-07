@@ -2,10 +2,13 @@ from collections import defaultdict
 from math import log
 
 
-def calculate_entropy_similarity(spectrum_a, spectrum_b, da_error=0.05, ppm_error=None):
+def calculate_entropy_similarity(spectrum_a, spectrum_b, da_error=None, ppm_error=None):
     """
     Calculates the entropy similarity for two given spectra.
     """
+    if (da_error is None) and (ppm_error is None):
+        da_error = 0.05
+
     spectrum_a = normalize_spectrum(spectrum_a)
     spectrum_b = normalize_spectrum(spectrum_b)
 
@@ -21,7 +24,14 @@ def calculate_entropy_similarity(spectrum_a, spectrum_b, da_error=0.05, ppm_erro
     sAB = calculate_spectral_entropy(combined_spectrum)
     sA = calculate_spectral_entropy(spectrum_a)
     sB = calculate_spectral_entropy(spectrum_b)
-    return 1 - (2 * sAB - sA - sB)/log(4)
+    similarity =  1 - (2 * sAB - sA - sB)/log(4)
+
+    # This is to try to keep floating point errors from sending back tiny
+    # negative values
+    if abs(similarity) < 1e-9:
+        return 0
+
+    return similarity
 
 
 def calculate_spectral_entropy(spectrum):

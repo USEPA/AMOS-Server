@@ -609,15 +609,20 @@ def spectrum_similarity_search():
     upper_mass_limit = request_json["upper_mass_limit"]
     methodology = request.json["methodology"]
     user_spectrum = request.json["spectrum"]
-    
+
     results = spectrum_search(lower_mass_limit, upper_mass_limit, methodology)
-    results = [{**r, "similarity": spectrum.calculate_entropy_similarity(r["spectrum"], user_spectrum)} for r in results]
-    return jsonify({"result_length":len(results), "results":results})
+
+    substance_mapping = {}
+    for r in results:
+        substance_mapping[r["dtxsid"]] = r["preferred_name"]
+        del r["preferred_name"]
+        r["similarity"] = spectrum.calculate_entropy_similarity(r["spectrum"], user_spectrum)
+    return jsonify({"result_length":len(results), "unique_substances":len(substance_mapping), "results":results, "substance_mapping": substance_mapping})
 
 
 def spectrum_search(lower_mass_limit, upper_mass_limit, methodology=None):
     q = db.select(
-            Compounds.dtxsid, Compounds.dtxcid, Contents.internal_id, RecordInfo.description, SpectrumData.spectrum
+            Compounds.dtxsid, Compounds.preferred_name, Contents.internal_id, RecordInfo.description, SpectrumData.spectrum
         ).filter(
             Compounds.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Spectrum")
         ).join_from(
@@ -679,27 +684,38 @@ def max_similarity_by_dtxsid():
     
     This access point is intended to be used by CFMID.
     """
-    dtxsids = request.get_json()["dtxsids"]
+    request_json = request.get_json()
+    dtxsids = request_json["dtxsids"]
     if type(dtxsids) == str:
         dtxsids = [dtxsids]
-    user_spectrum = request.get_json()["spectrum"]
-    q = db.select(Contents.dtxsid, RecordInfo.internal_id, SpectrumData.spectrum).filter(
-        (Contents.dtxsid.in_(dtxsids)) & (RecordInfo.data_type == "Spectrum")
+    user_spectrum = request_json["spectrum"]
+
+    da = request_json.get("da_window")
+    ppm = request_json.get("ppm_window")
+
+    results = get_spectra_for_substances(dtxsids)
+
+    compound_dict = {d:None for d in dtxsids}
+    for r in results:
+        similarity = spectrum.calculate_entropy_similarity(user_spectrum, r["spectrum"], da_error=da, ppm_error=ppm)
+        if compound_dict[r["dtxsid"]] is None or compound_dict[r["dtxsid"]] < similarity:
+            compound_dict[r["dtxsid"]] = similarity
+
+    return jsonify({"results":compound_dict})
+
+
+def get_spectra_for_substances(dtxsid_list):
+    """
+    Takes a list of DTXSIDs and returns all spectra associated with those DTXSIDs.
+    """
+    q = db.select(Contents.dtxsid, RecordInfo.internal_id, RecordInfo.description, SpectrumData.spectrum).filter(
+        (Contents.dtxsid.in_(dtxsid_list)) & (RecordInfo.data_type == "Spectrum")
     ).join_from(
         Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
     ).join_from(
         Contents, SpectrumData, Contents.internal_id==SpectrumData.internal_id
     )
-    results = [c._asdict() for c in db.session.execute(q).all()]
-
-    compound_dict = {d:None for d in dtxsids}
-    for r in results:
-        similarity = spectrum.calculate_entropy_similarity(user_spectrum, r["spectrum"])
-        if compound_dict[r["dtxsid"]] is None or compound_dict[r["dtxsid"]] < similarity:
-            compound_dict[r["dtxsid"]] = similarity
-
-
-    return jsonify({"results":compound_dict})
+    return [c._asdict() for c in db.session.execute(q).all()]
 
 
 @app.route("/get_info_by_id/<internal_id>")
@@ -710,6 +726,30 @@ def get_info_by_id(internal_id):
         return jsonify({"result": result[0].get_row_contents()})
     else:
         return jsonify({"result": None})
+
+
+@app.route("/database_summary/")
+def database_summary():
+    q_types = db.select(RecordInfo.record_type, RecordInfo.data_type, func.count(RecordInfo.internal_id)).group_by(RecordInfo.record_type, RecordInfo.data_type)
+    type_dict = defaultdict(dict)
+    for r in db.session.execute(q_types).all():
+        r = r._asdict()
+        type_dict[r["record_type"]][r["data_type"] if r["data_type"] else "None"] = r["count"]
+
+    q_sources = db.select(func.count(func.distinct(RecordInfo.source)))
+    unique_sources = db.session.execute(q_sources).all()[0][0]
+
+    q_substances = db.select(func.count(func.distinct(Contents.dtxsid)))
+    unique_substances = db.session.execute(q_substances).all()[0][0]
+    return jsonify({"result":"success", "substances_appearing": unique_substances, "source_count": unique_sources, "result_types": type_dict})
+
+
+@app.route("/spectra_for_substances/", methods=["POST"])
+def spectra_for_substances():
+    dtxsids = request.get_json()["dtxsids"]
+    spectrum_results = get_spectra_for_substances(dtxsids)
+    names_for_dtxsids = get_names_for_dtxsids(dtxsids)
+    return jsonify({"spectra":spectrum_results, "substance_mapping": names_for_dtxsids})
 
 
 
