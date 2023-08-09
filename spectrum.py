@@ -61,20 +61,20 @@ def combine_peaks(spectrum, da_error=0.05, ppm_error=None):
     spec_new = []
 
     for i in intensity_order:
-        peak_under_consideration = spectrum_copy[i]
-        if peak_under_consideration[1] > 0:
+        mz, intensity = spectrum_copy[i]
+        if intensity > 0:
             # either use the absolute error (da_error) or parts per million of the peak mz (ppm_error)
             # if neither input is good, assume no delta, though this should probably be improved later
             if da_error and da_error > 0:
                 mz_window_size = da_error
             elif ppm_error > 0:
-                mz_window_size = ppm_error * 1e-6 * peak_under_consideration
+                mz_window_size = ppm_error * 1e-6 * mz
             else:
                 mz_window_size = 0
 
             lowest_mz_peak_index = i
             while lowest_mz_peak_index > 0:
-                mz_delta = peak_under_consideration[0] - spectrum_copy[lowest_mz_peak_index-1][0]
+                mz_delta = mz - spectrum_copy[lowest_mz_peak_index-1][0]
                 if mz_delta <= mz_window_size:
                     lowest_mz_peak_index -= 1
                 else:
@@ -82,7 +82,7 @@ def combine_peaks(spectrum, da_error=0.05, ppm_error=None):
 
             highest_mz_peak_index = i
             while highest_mz_peak_index < len(spectrum_copy)-1:
-                mz_delta = spectrum_copy[highest_mz_peak_index+1][0] - peak_under_consideration[0]
+                mz_delta = spectrum_copy[highest_mz_peak_index+1][0] - mz
                 if mz_delta <= mz_window_size:
                     highest_mz_peak_index += 1
                 else:
