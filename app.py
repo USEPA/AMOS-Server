@@ -285,6 +285,7 @@ def method_list():
     for r in results:
         if pm := r.get("pdf_metadata"):
             r["author"] = pm.get("Author", None)
+            r["limitation"] = pm.get("Limitation", None)
             del r["pdf_metadata"]
         else:
             r["author"] = None
@@ -704,11 +705,43 @@ def max_similarity_by_dtxsid():
     return jsonify({"results":compound_dict})
 
 
-def get_spectra_for_substances(dtxsid_list):
+@app.route("/all_similarities_by_dtxsid/", methods=["POST"])
+def all_similarities_by_dtxsid():
+    request_json = request.get_json()
+    dtxsids = request_json["dtxsids"]
+    if type(dtxsids) == str:
+        dtxsids = [dtxsids]
+    user_spectrum = request_json["spectrum"]
+
+    da = request_json.get("da_window")
+    ppm = request_json.get("ppm_window")
+
+    results = get_spectra_for_substances(dtxsids)
+
+    # mass query
+    q = db.select(Compounds.dtxsid, Compounds.monoisotopic_mass).filter(Compounds.dtxsid.in_(dtxsids))
+    mass_results = [c._asdict() for c in db.session.execute(q).all()]
+    print(mass_results)
+
+    compound_dict = {d:[] for d in dtxsids}
+    mass_dict = {mr["dtxsid"]: mr["monoisotopic_mass"] for mr in mass_results}
+    for r in results:
+        r["spectrum"] = [[mz, i] for mz, i in r["spectrum"] if mz < (mass_dict[r["dtxsid"]]-1.5)]
+        if r["description"].startswith("#"):
+            r["description"] = None
+        else:
+            r["description"] = ";".join(r["description"].split(";")[:-1])
+        similarity = spectrum.calculate_entropy_similarity(user_spectrum, r["spectrum"], da_error=da, ppm_error=ppm)
+        compound_dict[r["dtxsid"]].append({"similarity": similarity, "description": r["description"]})
+
+    return jsonify({"results":compound_dict})
+
+
+def get_spectra_for_substances(dtxsid_list, additional_fields=[]):
     """
     Takes a list of DTXSIDs and returns all spectra associated with those DTXSIDs.
     """
-    q = db.select(Contents.dtxsid, RecordInfo.internal_id, RecordInfo.description, SpectrumData.spectrum).filter(
+    q = db.select(Contents.dtxsid, RecordInfo.internal_id, RecordInfo.description, SpectrumData.spectrum, *additional_fields).filter(
         (Contents.dtxsid.in_(dtxsid_list)) & (RecordInfo.data_type == "Spectrum")
     ).join_from(
         Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
