@@ -271,7 +271,7 @@ def method_list():
     q = db.select(
         Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix, Methods.analyte,
         Methods.chemical_class, Methods.pdf_metadata, RecordInfo.source, RecordInfo.methodologies, RecordInfo.description,
-        func.count(Contents.dtxsid)
+        Methods.document_type, func.count(Contents.dtxsid)
     ).join_from(
         Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id
     ).join_from(
@@ -490,7 +490,7 @@ def get_similar_methods(dtxsid):
     ids_to_method_names = {r["internal_id"]:r["method_name"] for r in results}
 
     dtxsid_counts = Counter([r["dtxsid"] for r in results])
-    dtxsid_counts = [{"dtxsid": k, "num_methods": v, "preferred_name": dtxsid_names.get(k), "similarity": similarity_dict[k]} for k, v in dtxsid_counts.items()]
+    dtxsid_counts = [{"dtxsid": k, "num_methods": v, "preferred_name": dtxsid_names.get(k), "similarity": similarity_dict[k] if k != dtxsid else 1.0001} for k, v in dtxsid_counts.items()]
 
     return jsonify({"results":results, "ids_to_method_names":ids_to_method_names, "dtxsid_counts":dtxsid_counts})
 
@@ -716,7 +716,7 @@ def all_similarities_by_dtxsid():
     da = request_json.get("da_window")
     ppm = request_json.get("ppm_window")
 
-    results = get_spectra_for_substances(dtxsids)
+    results = get_spectra_for_substances(dtxsids, [SpectrumData.spectrum_metadata])
 
     # mass query
     q = db.select(Compounds.dtxsid, Compounds.monoisotopic_mass).filter(Compounds.dtxsid.in_(dtxsids))
@@ -732,7 +732,7 @@ def all_similarities_by_dtxsid():
         else:
             r["description"] = ";".join(r["description"].split(";")[:-1])
         similarity = spectrum.calculate_entropy_similarity(user_spectrum, r["spectrum"], da_error=da, ppm_error=ppm)
-        compound_dict[r["dtxsid"]].append({"similarity": similarity, "description": r["description"]})
+        compound_dict[r["dtxsid"]].append({"similarity": similarity, "description": r["description"], "metadata": r["spectrum_metadata"]})
 
     return jsonify({"results":compound_dict})
 

@@ -90,6 +90,7 @@ class FactSheets(db.Model):
     sub_source = db.Column(db.TEXT)
     date_published = db.Column(db.TEXT)
     fact_sheet_name = db.Column(db.TEXT)
+    document_type = db.Column(db.TEXT)
 
 
 class Methods(db.Model):
@@ -105,6 +106,7 @@ class Methods(db.Model):
     chemical_class = db.Column(db.TEXT)
     matrix = db.Column(db.TEXT)
     has_associated_spectra = db.Column(db.BOOLEAN)
+    document_type = db.Column(db.TEXT)
 
 class MethodsWithSpectra(db.Model):
     __tablename__ = "methods_with_spectra"
