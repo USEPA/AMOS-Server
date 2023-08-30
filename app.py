@@ -33,7 +33,7 @@ uname = os.environ['AMOS_POSTGRES_USER']
 pwd = os.environ['AMOS_POSTGRES_PASSWORD']
 
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@ccte-pgsql-dev.epa.gov:5432/dev_poc"
+app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@ccte-pgsql-stg.epa.gov:5432/dev_poc"
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = "secretkey"
