@@ -68,6 +68,7 @@ This table contains information specific to fact sheets stored in the database, 
 - date_published: A string containing the publication date of the fact sheet.  The format of the dates is not guaranteed to be consistent between all fact sheets.
 - fact_sheet_name: The name/title of the fact sheet.
 - document_type: A shorthand for the type of document.  Usually an abbreviation.
+- analyte: The analyte being examined in the fact sheet.
 
 
 METHODS

@@ -246,9 +246,14 @@ def fact_sheet_list():
     A list of dictionaries, each one corresponding to one fact sheet in the
     database.
     """
-    q = db.select(FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.date_published, FactSheets.sub_source)
+
+    #TODO: Add chemical class once that's added to the database
+    q = db.select(
+        FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.analyte, FactSheets.document_type, RecordInfo.source, RecordInfo.link
+    ).join_from(
+        FactSheets, RecordInfo, FactSheets.internal_id==RecordInfo.internal_id
+    )
     results = [r._asdict() for r in db.session.execute(q).all()]
-    results = [{**r, "year_published": util.clean_year(r["date_published"])} for r in results]
     return jsonify({"results":results})
 
 
@@ -456,7 +461,7 @@ def get_similar_methods(dtxsid):
     """
     similar_substance_info = find_similar_compounds(dtxsid, similarity_threshold=0.5)["similar_substance_info"]
     if similar_substance_info is None:
-        return jsonify({"results":None, "ids_to_method_names":None})
+        return jsonify({"results":None, "ids_to_method_names":None, "dtxsid_counts": []})
     
     similar_dtxsids = [ssi["dtxsid"] for ssi in similar_substance_info]
     similarity_dict = {ssi["dtxsid"]: ssi["similarity"] for ssi in similar_substance_info}
@@ -623,7 +628,7 @@ def spectrum_similarity_search():
 
 def spectrum_search(lower_mass_limit, upper_mass_limit, methodology=None):
     q = db.select(
-            Compounds.dtxsid, Compounds.preferred_name, Contents.internal_id, RecordInfo.description, SpectrumData.spectrum
+            Compounds.dtxsid, Compounds.preferred_name, Contents.internal_id, RecordInfo.description, SpectrumData.spectrum, SpectrumData.spectrum_metadata
         ).filter(
             Compounds.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Spectrum")
         ).join_from(

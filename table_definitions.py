@@ -91,6 +91,7 @@ class FactSheets(db.Model):
     date_published = db.Column(db.TEXT)
     fact_sheet_name = db.Column(db.TEXT)
     document_type = db.Column(db.TEXT)
+    analyte = db.Column(db.TEXT)
 
 
 class Methods(db.Model):
