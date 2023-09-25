@@ -461,14 +461,15 @@ def get_similar_methods(dtxsid):
     """
     similar_substance_info = find_similar_compounds(dtxsid, similarity_threshold=0.5)["similar_substance_info"]
     if similar_substance_info is None:
-        return jsonify({"results":None, "ids_to_method_names":None, "dtxsid_counts": []})
+        similar_dtxsids = []
+        similarity_dict = {}
+    else:
+        similar_dtxsids = [ssi["dtxsid"] for ssi in similar_substance_info]
+        similarity_dict = {ssi["dtxsid"]: ssi["similarity"] for ssi in similar_substance_info}
     
-    similar_dtxsids = [ssi["dtxsid"] for ssi in similar_substance_info]
-    similarity_dict = {ssi["dtxsid"]: ssi["similarity"] for ssi in similar_substance_info}
-
-    # add the actual DTXSID manually -- the case where there are methods for the DTXSID will likely be changed down the road
+    # add the actual DTXSID manually
     similar_dtxsids.append(dtxsid)
-    similarity_dict[dtxsid] = 1
+    similarity_dict[dtxsid] = 1.0001
 
     q = db.select(
             Contents.internal_id, Contents.dtxsid, RecordInfo.source, RecordInfo.methodologies,
@@ -495,7 +496,7 @@ def get_similar_methods(dtxsid):
     ids_to_method_names = {r["internal_id"]:r["method_name"] for r in results}
 
     dtxsid_counts = Counter([r["dtxsid"] for r in results])
-    dtxsid_counts = [{"dtxsid": k, "num_methods": v, "preferred_name": dtxsid_names.get(k), "similarity": similarity_dict[k] if k != dtxsid else 1.0001} for k, v in dtxsid_counts.items()]
+    dtxsid_counts = [{"dtxsid": k, "num_methods": v, "preferred_name": dtxsid_names.get(k), "similarity": similarity_dict[k]} for k, v in dtxsid_counts.items()]
 
     return jsonify({"results":results, "ids_to_method_names":ids_to_method_names, "dtxsid_counts":dtxsid_counts})
 
@@ -720,24 +721,31 @@ def all_similarities_by_dtxsid():
 
     da = request_json.get("da_window")
     ppm = request_json.get("ppm_window")
+    min_intensity = request_json.get("min_intensity", 0)
 
     results = get_spectra_for_substances(dtxsids, [SpectrumData.spectrum_metadata])
 
     # mass query
     q = db.select(Compounds.dtxsid, Compounds.monoisotopic_mass).filter(Compounds.dtxsid.in_(dtxsids))
     mass_results = [c._asdict() for c in db.session.execute(q).all()]
-    print(mass_results)
 
     compound_dict = {d:[] for d in dtxsids}
     mass_dict = {mr["dtxsid"]: mr["monoisotopic_mass"] for mr in mass_results}
     for r in results:
-        r["spectrum"] = [[mz, i] for mz, i in r["spectrum"] if mz < (mass_dict[r["dtxsid"]]-1.5)]
+        result_spectrum = [[mz, i] for mz, i in r["spectrum"] if (mz < (mass_dict[r["dtxsid"]]-1.5)) and (i > min_intensity)]
+        if len(result_spectrum) == 0:
+            continue
         if r["description"].startswith("#"):
-            r["description"] = None
+            description = None
         else:
-            r["description"] = ";".join(r["description"].split(";")[:-1])
-        similarity = spectrum.calculate_entropy_similarity(user_spectrum, r["spectrum"], da_error=da, ppm_error=ppm)
-        compound_dict[r["dtxsid"]].append({"similarity": similarity, "description": r["description"], "metadata": r["spectrum_metadata"]})
+            description = ";".join(r["description"].split(";")[:-1])
+        combined_spectrum = spectrum.combine_peaks(result_spectrum)
+        spectral_entropy = spectrum.calculate_spectral_entropy(combined_spectrum)
+        normalized_entropy = spectral_entropy/len(combined_spectrum)
+        information = {"Points": len(result_spectrum), "Spectral Entropy": spectral_entropy, "Normalized Entropy": normalized_entropy,
+                       "Rating": "Clean" if spectral_entropy <= 3.0 and normalized_entropy <= 0.8 else "Noisy"}
+        similarity = spectrum.calculate_entropy_similarity(user_spectrum, combined_spectrum, da_error=da, ppm_error=ppm)
+        compound_dict[r["dtxsid"]].append({"similarity": similarity, "description": description, "metadata": r["spectrum_metadata"], "information": information})
 
     return jsonify({"results":compound_dict})
 
