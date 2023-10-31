@@ -90,3 +90,9 @@ METHODS WITH SPECTRA
 This table pairs the internal IDs of methods with the spectra associated with them.  Spectra referenced in this table are assumed to have the spectrum actually in the database (not externally linked or in PDF form).
 - method_id: The internal ID of a method.  Should be the internal_id value of a record with record_type="Method".
 - spectrum_id: The internal ID of a spectrum.  Should be the internal_id value of a record with record_type="Spectrum".
+
+
+COMPOUND IMAGES
+This table stores images of substances which have images of the structure available in DSSTox's database but which are not yet publicly available on the API that CompTox gets its images from.
+- dtxsid: The DTXSID of the substance.
+- png_image: The image of the substance, as a binary blob.

@@ -109,8 +109,16 @@ class Methods(db.Model):
     has_associated_spectra = db.Column(db.BOOLEAN)
     document_type = db.Column(db.TEXT)
 
+
 class MethodsWithSpectra(db.Model):
     __tablename__ = "methods_with_spectra"
     __table_args__ = {'schema': 'amos'}
     spectrum_id = db.Column(db.TEXT, primary_key=True)
     method_id = db.Column(db.TEXT)
+
+
+class CompoundImages(db.Model):
+    __tablename__ = "compound_images"
+    __table_args__ = {'schema': 'amos'}
+    dtxsid = db.Column(db.TEXT, primary_key=True)
+    png_image = db.Column(BYTEA)

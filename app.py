@@ -1,16 +1,18 @@
 from collections import Counter, defaultdict
 from enum import Enum
+import io
 import re
 import os
 
-from flask import Flask, jsonify, make_response, request
+from flask import Flask, jsonify, make_response, request, Response
 from flask_cors import CORS
+import pandas as pd
 import requests
 from sqlalchemy import func
 
 import spectrum
-from table_definitions import db, Compounds, Contents, FactSheets, Methods, \
-    MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
+from table_definitions import db, CompoundImages, Compounds, Contents, FactSheets, \
+    Methods, MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
 import util
 import sentry_sdk
 from sentry_sdk.integrations.flask import FlaskIntegration
@@ -182,8 +184,16 @@ def search_results(dtxsid):
 
     id_query = db.select(Contents.internal_id).filter(Contents.dtxsid == dtxsid)
     internal_ids = [ir.internal_id for ir in db.session.execute(id_query).all()]
-    record_query = db.select(RecordInfo.source, RecordInfo.internal_id, RecordInfo.link, RecordInfo.record_type, RecordInfo.methodologies,
-                       RecordInfo.data_type, RecordInfo.description).filter(RecordInfo.internal_id.in_(internal_ids))
+    record_query = db.select(
+        RecordInfo.source, RecordInfo.internal_id, RecordInfo.link, RecordInfo.record_type, RecordInfo.methodologies,
+        RecordInfo.data_type, RecordInfo.description, func.count(Contents.dtxsid)
+    ).join_from(
+        RecordInfo, Contents, Contents.internal_id==RecordInfo.internal_id
+    ).filter(
+        RecordInfo.internal_id.in_(internal_ids)
+    ).group_by(
+        RecordInfo.internal_id
+    )
     records = [r._asdict() for r in db.session.execute(record_query)]
 
     result_record_types = [r["record_type"] for r in records]
@@ -280,7 +290,7 @@ def method_list():
     ).join_from(
         Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id
     ).join_from(
-        RecordInfo, Contents, RecordInfo.internal_id==Contents.internal_id
+        RecordInfo, Contents, RecordInfo.internal_id==Contents.internal_id, isouter=True
     ).group_by(
         Methods.internal_id, RecordInfo.internal_id
     )
@@ -364,7 +374,6 @@ def get_pdf_metadata(record_type, internal_id):
     else:
         return f"Error: invalid record type {record_type}."
 
-
     data_row = db.session.execute(q).first()
     if data_row is not None:
         data_row = data_row._asdict()
@@ -431,8 +440,7 @@ def find_similar_compounds(dtxsid, similarity_threshold=0.8):
     A list of similar substances, or None if none were found.
     """
 
-    #BASE_URL = "https://ccte-api-ccd-dev.epa.gov/similar-compound/by-dtxsid/"   <-- original endpoint
-    BASE_URL = "https://ccte-api-ccd.epa.gov/similar-compound/by-dtxsid/"   # <-- temporary(?) replacement
+    BASE_URL = "https://ccte-api-ccd.epa.gov/similar-compound/by-dtxsid/"
     response = requests.get(f"{BASE_URL}{dtxsid}/{similarity_threshold}")
     if response.status_code == 200:
         return {"similar_substance_info": response.json()}
@@ -513,25 +521,43 @@ def batch_search():
     element, but no other parameters are required.
     """
     dtxsid_list = request.get_json()["dtxsids"]
-    q = db.select(
-            Contents.internal_id, Contents.dtxsid, Compounds.casrn, Compounds.preferred_name, RecordInfo.methodologies,
-            RecordInfo.source, RecordInfo.link, RecordInfo.record_type, RecordInfo.description
+    base_url = request.get_json()["base_url"]
+    include_spectrabase = request.get_json()["include_spectrabase"]
+
+    substance_query = db.select(Compounds.dtxsid, Compounds.casrn, Compounds.preferred_name).filter(Compounds.dtxsid.in_(dtxsid_list))
+    substances = [c._asdict() for c in db.session.execute(substance_query).all()]
+    substance_df = pd.DataFrame(substances)
+
+    record_query = db.select(
+            Contents.internal_id, Contents.dtxsid, RecordInfo.methodologies, RecordInfo.source, RecordInfo.link, RecordInfo.record_type, RecordInfo.description
         ).filter(Contents.dtxsid.in_(dtxsid_list)).join_from(
             Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
-        ).join_from(Contents, Compounds, Contents.dtxsid==Compounds.dtxsid)
-    results = [c._asdict() for c in db.session.execute(q).all()]
+        )
+    records = [c._asdict() for c in db.session.execute(record_query).all()]
+    if not include_spectrabase:
+        # don't add as a filter to the query; it'll miss records without sources if it's added there
+        records = [r for r in records if r["source"] != "SpectraBase"]
+    for i, r in enumerate(records):
+        # if a record has no link, have it link back to the search page of the Vue app with the row preselected
+        if r["link"] is None:
+            records[i]["link"] = f"{base_url}/search/{r['dtxsid']}?initial_row_selected={r['internal_id']}"
+    record_df = pd.DataFrame(records)
 
-    if len(results) > 0:
-        base_url = request.get_json()["base_url"]
-        for i, r in enumerate(results):
-            # if a record has no link, have it link back to the search page of the Vue app with the row preselected
-            if r["link"] is None:
-                results[i]["link"] = f"{base_url}/search/{r['dtxsid']}?initial_row_selected={r['internal_id']}"
-        csv_string = util.make_csv_string(results)
+    result_df = substance_df.merge(record_df, how="right", on="dtxsid")
 
-        return jsonify({"csv_string":csv_string})
-    else:
-        return jsonify({"csv_string":""})
+    result_counts = record_df.groupby(["dtxsid"]).size().reset_index()
+    result_counts.columns = ["dtxsid", "num_records"]
+    result_counts = pd.DataFrame({"dtxsid":dtxsid_list}).merge(substance_df, how="left", on="dtxsid").merge(result_counts, how="left", on="dtxsid")
+    result_counts["num_records"] = result_counts["num_records"].fillna(0)
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer) as writer:
+        result_counts.to_excel(writer, sheet_name="Substances", index=None)
+        result_df.to_excel(writer, sheet_name="Records", index=None)
+
+    headers = {"Content-Disposition": "attachment; filename=batch_search.xlsx", "Content-type":"application/vnd.ms-excel"}
+
+    return Response(buffer.getvalue(), mimetype="application/vnd.ms-excel", headers=headers)
 
 
 @app.route("/method_with_spectra/<search_type>/<internal_id>")
@@ -604,13 +630,24 @@ def get_compounds_for_ids():
             Contents.dtxsid, Compounds.preferred_name, Compounds.casrn, Compounds.jchem_inchikey
         ).filter(Contents.internal_id.in_(internal_id_list)).join_from(Contents, Compounds, Contents.dtxsid==Compounds.dtxsid).distinct()
     results = [c._asdict() for c in db.session.execute(q).all()]
-    csv_string = util.make_csv_string(results)
+    result_df = pd.DataFrame(results)
 
-    return jsonify({"csv_string":csv_string})
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer) as writer:
+        result_df.to_excel(writer, sheet_name="Compounds", index=None)
+
+    headers = {"Content-Disposition": "attachment; filename=compounds.xlsx", "Content-type":"application/vnd.ms-excel"}
+
+    return Response(buffer.getvalue(), mimetype="application/vnd.ms-excel", headers=headers)
 
 
 @app.route("/spectrum_similarity_search/", methods=["POST"])
 def spectrum_similarity_search():
+    """
+    Takes a mass range, methodology, and mass spectrum, and returns all spectra
+    that match the mass and methodology, with entropy similarities between the
+    database spectra and the user-supplied one.
+    """
     request_json = request.get_json()
     lower_mass_limit = request_json["lower_mass_limit"]
     upper_mass_limit = request_json["upper_mass_limit"]
@@ -628,6 +665,10 @@ def spectrum_similarity_search():
 
 
 def spectrum_search(lower_mass_limit, upper_mass_limit, methodology=None):
+    """
+    Retrieves basic information on a set of spectra from the database,
+    constrained by a mass range and an analytical methodology.
+    """
     q = db.select(
             Compounds.dtxsid, Compounds.preferred_name, Contents.internal_id, RecordInfo.description, SpectrumData.spectrum, SpectrumData.spectrum_metadata
         ).filter(
@@ -797,6 +838,48 @@ def spectra_for_substances():
     names_for_dtxsids = get_names_for_dtxsids(dtxsids)
     return jsonify({"spectra":spectrum_results, "substance_mapping": names_for_dtxsids})
 
+
+@app.route("/get_image_for_dtxsid/<dtxsid>")
+def get_image_for_dtxsid(dtxsid):
+    """
+    Retrieves a substance's image from the database.
+    """
+    q = db.select(CompoundImages.png_image).filter(CompoundImages.dtxsid==dtxsid)
+    result = db.session.execute(q).first()
+    if result is not None:
+        image = result.png_image
+        response = make_response(image)
+        response.headers['Content-Type'] = "image/png"
+        response.headers['Content-Disposition'] = f"inline; filename=\"{dtxsid}\".png"
+        return response
+    else:
+        return Response(status=204)
+
+
+@app.route("/substring_search/<substring>")
+def substring_search(substring):
+    preferred_name_query = db.select(
+            Compounds.preferred_name, Compounds.dtxsid, Compounds.casrn, Compounds.monoisotopic_mass, Compounds.molecular_formula
+        ).filter(Compounds.preferred_name.ilike(f"%{substring}%"))
+    synonym_query = db.select(
+            Synonyms.synonym, Synonyms.dtxsid, Compounds.preferred_name, Compounds.casrn, Compounds.monoisotopic_mass, Compounds.molecular_formula
+        ).join_from(
+            Synonyms, Compounds, Synonyms.dtxsid==Compounds.dtxsid
+        ).filter(Synonyms.synonym.ilike(f"%{substring}%"))
+    preferred_names = [r._asdict() for r in db.session.execute(preferred_name_query).all()]
+    synonyms = [r._asdict() for r in db.session.execute(synonym_query).all()]
+
+    info_dict = {}
+    for pn in preferred_names:
+        info_dict[pn["dtxsid"]] = {"synonyms": [], **pn}
+    for s in synonyms:
+        if s["dtxsid"] in info_dict:
+            info_dict[s["dtxsid"]]["synonyms"].append(s["synonym"])
+        else:
+            info_dict[s["dtxsid"]] = {**s, "synonyms": [s["synonym"]]}
+            del info_dict[s["dtxsid"]]["synonym"]
+    info_list = [v for _,v in info_dict.items()]
+    return jsonify({"info_list": info_list})
 
 
 if __name__ == "__main__":
