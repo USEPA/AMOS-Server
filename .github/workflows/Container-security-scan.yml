@@ -41,7 +41,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.12.0
         id:   scan
         with:
-          image-ref: 'analytical-qc-server-security-${{ github.head_ref || github.ref_name }}'
+          image-ref: 'amos-server-security-${{ github.head_ref || github.ref_name }}'
           format: 'table'
           severity: 'CRITICAL,HIGH'
           
