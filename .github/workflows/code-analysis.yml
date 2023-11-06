@@ -2,7 +2,7 @@ name: Code-analysis
 
 on:
   push:
-    branches: [ dev-655 ]
+    branches: [ dev ]
 
 
 jobs:
