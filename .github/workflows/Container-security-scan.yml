@@ -1,0 +1,55 @@
+name: Container-security-scan
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+on:
+  push:
+    branches: [ "dev", "staging" ]
+    # Publish semver tags as releases.
+    tags: [ 'v*.*.*' ]
+
+env:
+  # Use docker.io for Docker Hub if empty
+  REGISTRY: ghcr.io
+  # github.repository as <account>/<repo>
+  IMAGE_NAME: ${{ github.repository }}
+
+
+jobs:
+ container-scan:
+
+    runs-on: th889
+    environment: ${{ github.head_ref || github.ref_name }}
+    permissions:
+      contents: read
+      packages: write
+      # This is used to complete the identity challenge
+      # with sigstore/fulcio when running outside of PRs.
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Docker build
+        run: docker build -f Dockerfile -t amos-server-security-${{ github.head_ref || github.ref_name }} .
+          
+      - name: Run security scan on the container
+        uses: aquasecurity/trivy-action@0.12.0
+        id:   scan
+        with:
+          image-ref: 'amos-server-security-${{ github.head_ref || github.ref_name }}'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          
+      # Removing old packages and only keeping 3 untagged versions
+      - name: Delete Package Versions
+        uses: actions/delete-package-versions@v4.1.0
+        with: 
+          package-name: amos-server
+          package-type: 'container'
+          min-versions-to-keep: 3
+          delete-only-untagged-versions: 'true'   
