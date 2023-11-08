@@ -44,12 +44,3 @@ jobs:
           image-ref: 'amos-server-security-${{ github.head_ref || github.ref_name }}'
           format: 'table'
           severity: 'CRITICAL,HIGH'
-          
-      # Removing old packages and only keeping 3 untagged versions
-      - name: Delete Package Versions
-        uses: actions/delete-package-versions@v4.1.0
-        with: 
-          package-name: amos-server
-          package-type: 'container'
-          min-versions-to-keep: 3
-          delete-only-untagged-versions: 'true'   
