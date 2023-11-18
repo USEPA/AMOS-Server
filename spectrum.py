@@ -108,3 +108,14 @@ def normalize_spectrum(spectrum):
     max_intensity = sum([i for mz, i in spectrum])
     normalized_spectrum = [[mz, i/max_intensity] for mz, i in spectrum]
     return normalized_spectrum
+
+
+def validate_spectrum(spectrum):
+    if type(spectrum) is not list:
+        raise ValueError("Spectrum format is incorrect -- submitted value is not a list")
+    if not all((type(x) is tuple or type(x) is list) for x in spectrum):
+        raise ValueError("Spectrum format is incorrect -- at least one element in the list of peaks is not itself a list.")
+    if not all(len(x) == 2 for x in spectrum):
+        raise ValueError("Spectrum format is incorrect -- at least one element in the list does not have exactly two elements (m/z and intensity).")
+    if not all(isinstance(x[0], (int, float)) and isinstance(x[1], (int, float)) for x in spectrum):
+        raise ValueError("Spectrum format is incorrect -- at least one peak in the list has a non-numeric object in its data.")

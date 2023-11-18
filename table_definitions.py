@@ -5,8 +5,8 @@ from sqlalchemy.dialects.postgresql import ARRAY, BYTEA
 db = SQLAlchemy()
 
 
-class Compounds(db.Model):
-    __tablename__ = "compounds"
+class Substances(db.Model):
+    __tablename__ = "substances"
     __table_args__ = {'schema': 'amos'}
     dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
     dtxcid = db.Column(db.VARCHAR(32))
@@ -108,6 +108,7 @@ class Methods(db.Model):
     matrix = db.Column(db.TEXT)
     has_associated_spectra = db.Column(db.BOOLEAN)
     document_type = db.Column(db.TEXT)
+    publisher = db.Column(db.TEXT)
 
 
 class MethodsWithSpectra(db.Model):
@@ -117,8 +118,8 @@ class MethodsWithSpectra(db.Model):
     method_id = db.Column(db.TEXT)
 
 
-class CompoundImages(db.Model):
-    __tablename__ = "compound_images"
+class SubstanceImages(db.Model):
+    __tablename__ = "substance_images"
     __table_args__ = {'schema': 'amos'}
     dtxsid = db.Column(db.TEXT, primary_key=True)
     png_image = db.Column(BYTEA)

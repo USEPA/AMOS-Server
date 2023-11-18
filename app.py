@@ -11,7 +11,7 @@ import requests
 from sqlalchemy import func
 
 import spectrum
-from table_definitions import db, CompoundImages, Compounds, Contents, FactSheets, \
+from table_definitions import db, SubstanceImages, Substances, Contents, FactSheets, \
     Methods, MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
 import util
 import sentry_sdk
@@ -47,7 +47,7 @@ CORS(app, resources={r'/*': {'origins': '*'}})
 class SearchType(Enum):
     InChIKey = 1
     CASRN = 2
-    CompoundName = 3
+    SubstanceName = 3
     DTXSID = 4
 
 
@@ -74,7 +74,7 @@ def determine_search_type(search_term):
     elif re.match("DTXSID[0-9]*", search_term.strip()):
         return SearchType.DTXSID
     else:
-        return SearchType.CompoundName
+        return SearchType.SubstanceName
 
 
 @app.route("/get_substances_for_search_term/<search_term>")
@@ -101,22 +101,22 @@ def get_substances_for_search_term(search_term):
     search_type = determine_search_type(search_term)
     substances = None   # default value
     ambiguity = None   # default value
-    q = db.select(Compounds)
+    q = db.select(Substances)
 
     if search_type == SearchType.DTXSID:
-        q = q.filter(Compounds.dtxsid == search_term)
+        q = q.filter(Substances.dtxsid == search_term)
         results = db.session.execute(q).first()
         if results:
             substances = results[0].get_row_contents()
     
-    elif search_type == SearchType.CompoundName:
-        q_name = q.filter(Compounds.preferred_name.ilike(search_term))
+    elif search_type == SearchType.SubstanceName:
+        q_name = q.filter(Substances.preferred_name.ilike(search_term))
         results = db.session.execute(q_name).first()
         # if no matches, check if it's a synonym
         if results:
             substances = results[0].get_row_contents()
         else:
-            q_syn = q.join_from(Synonyms, Compounds, Synonyms.dtxsid==Compounds.dtxsid).filter(Synonyms.synonym.ilike(search_term))
+            q_syn = q.join_from(Synonyms, Substances, Synonyms.dtxsid==Substances.dtxsid).filter(Synonyms.synonym.ilike(search_term))
             synonym_results = db.session.execute(q_syn).all()
             if len(synonym_results) == 1:
                 substances = synonym_results[0][0].get_row_contents()
@@ -126,7 +126,7 @@ def get_substances_for_search_term(search_term):
     
     elif search_type == SearchType.InChIKey:
         inchikey_first_block = search_term[:14]
-        q = q.filter(Compounds.jchem_inchikey.like(inchikey_first_block+"%") | Compounds.indigo_inchikey.like(inchikey_first_block+"%"))
+        q = q.filter(Substances.jchem_inchikey.like(inchikey_first_block+"%") | Substances.indigo_inchikey.like(inchikey_first_block+"%"))
         results = [r[0].get_row_contents() for r in db.session.execute(q).all()]
         inchikey_present = any([r["jchem_inchikey"] == search_term for r in results]) or any([r["indigo_inchikey"] == search_term for r in results])
         if inchikey_present and len(results) == 1:
@@ -136,7 +136,7 @@ def get_substances_for_search_term(search_term):
             ambiguity = "inchikey"
     
     elif search_type == SearchType.CASRN:
-        q = q.filter(Compounds.casrn == search_term)
+        q = q.filter(Substances.casrn == search_term)
         results = db.session.execute(q).first()
         if results:
             substances = results[0].get_row_contents()
@@ -150,9 +150,9 @@ def get_substances_for_search_term(search_term):
 def get_names_for_dtxsids(dtxsid_list):
     """
     Creates a dictionary that maps a list of DTXSIDs to the EPA-preferred name
-    for the compound.
+    for the substance.
     """
-    q = db.select(Compounds.preferred_name, Compounds.dtxsid).filter(Compounds.dtxsid.in_(dtxsid_list))
+    q = db.select(Substances.preferred_name, Substances.dtxsid).filter(Substances.dtxsid.in_(dtxsid_list))
     results = [c._asdict() for c in db.session.execute(q).all()]
     names_for_dtxsids = {r["dtxsid"]:r["preferred_name"] for r in results}
     return names_for_dtxsids
@@ -184,6 +184,7 @@ def search_results(dtxsid):
 
     id_query = db.select(Contents.internal_id).filter(Contents.dtxsid == dtxsid)
     internal_ids = [ir.internal_id for ir in db.session.execute(id_query).all()]
+
     record_query = db.select(
         RecordInfo.source, RecordInfo.internal_id, RecordInfo.link, RecordInfo.record_type, RecordInfo.methodologies,
         RecordInfo.data_type, RecordInfo.description, func.count(Contents.dtxsid)
@@ -195,6 +196,14 @@ def search_results(dtxsid):
         RecordInfo.internal_id
     )
     records = [r._asdict() for r in db.session.execute(record_query)]
+
+    method_number_query = db.select(Methods.internal_id, Methods.method_number).filter(Methods.internal_id.in_(internal_ids))
+    method_numbers = [r._asdict() for r in db.session.execute(method_number_query)]
+    method_numbers = {mn["internal_id"]: mn["method_number"] for mn in method_numbers}
+
+    for r in records:
+        if r["internal_id"] in method_numbers:
+            r["method_number"] = method_numbers[r["internal_id"]]
 
     result_record_types = [r["record_type"] for r in records]
     record_type_counts = Counter(result_record_types)
@@ -257,13 +266,25 @@ def fact_sheet_list():
     database.
     """
 
-    #TODO: Add chemical class once that's added to the database
     q = db.select(
-        FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.analyte, FactSheets.document_type, RecordInfo.source, RecordInfo.link
+        FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.analyte, FactSheets.document_type, RecordInfo.source, RecordInfo.link, func.count(Contents.dtxsid)
     ).join_from(
         FactSheets, RecordInfo, FactSheets.internal_id==RecordInfo.internal_id
+    ).join_from(
+        RecordInfo, Contents, RecordInfo.internal_id==Contents.internal_id, isouter=True
+    ).group_by(
+        FactSheets.internal_id, RecordInfo.internal_id
     )
     results = [r._asdict() for r in db.session.execute(q).all()]
+
+    single_dtxsid_ids = [r["internal_id"] for r in results if r["count"] == 1]
+    q2 = db.select(Contents.internal_id, Contents.dtxsid).filter(Contents.internal_id.in_(single_dtxsid_ids))
+    single_dtxsid_results = {r.internal_id: r.dtxsid for r in db.session.execute(q2).all()}
+
+    for i in range(len(results)):
+        if results[i]["internal_id"] in single_dtxsid_results:
+            results[i]["dtxsid"] = single_dtxsid_results[results[i]["internal_id"]]
+
     return jsonify({"results":results})
 
 
@@ -286,7 +307,7 @@ def method_list():
     q = db.select(
         Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix, Methods.analyte,
         Methods.chemical_class, Methods.pdf_metadata, RecordInfo.source, RecordInfo.methodologies, RecordInfo.description,
-        Methods.document_type, func.count(Contents.dtxsid)
+        Methods.document_type, Methods.publisher, func.count(Contents.dtxsid)
     ).join_from(
         Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id
     ).join_from(
@@ -392,8 +413,8 @@ def get_pdf_metadata(record_type, internal_id):
 def find_dtxsids(internal_id):
     """
     Returns a list of DTXSIDs associated with the specified internal ID, along
-    with additional compound information.  This is mostly used for pulling back
-    information on the compounds listed in a method or fact sheet.
+    with additional substance information.  This is mostly used for pulling back
+    information on the substances listed in a method or fact sheet.
 
     Parameters
     ----------
@@ -402,26 +423,26 @@ def find_dtxsids(internal_id):
 
     Returns
     -------
-    A JSON structure containing a list of compound information.  This will be
+    A JSON structure containing a list of substance information.  This will be
     empty if no records were found.
     """
     q = db.select(Contents.dtxsid).filter(Contents.internal_id==internal_id)
     dtxsids = db.session.execute(q).all()
     if len(dtxsids) > 0:
         dtxsids = [d[0] for d in dtxsids]
-        q2 = db.select(Compounds.dtxsid, Compounds.casrn, Compounds.preferred_name).filter(Compounds.dtxsid.in_(dtxsids))
-        compound_info = db.session.execute(q2).all()
-        return jsonify({"compound_list":[c._asdict() for c in compound_info]})
+        q2 = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsids))
+        substance_info = db.session.execute(q2).all()
+        return jsonify({"substance_list":[c._asdict() for c in substance_info]})
     else:
         print(f"Warning -- no DTXSIDs found for internal ID {internal_id}")
-        return jsonify({"compound_list":[]})
+        return jsonify({"substance_list":[]})
 
 
-@app.route("/compound_similarity_search/<dtxsid>")
-def find_similar_compounds(dtxsid, similarity_threshold=0.8):
+@app.route("/substance_similarity_search/<dtxsid>")
+def find_similar_substances(dtxsid, similarity_threshold=0.8):
     """
-    Makes a call to an EPA-built API for compound similarity and returns the
-    list of DTXSIDs of compounds with a similarity measure at or above the
+    Makes a call to an EPA-built API for substance similarity and returns the
+    list of DTXSIDs of substances with a similarity measure at or above the
     `similarity_threshold` parameter.
 
     Parameters
@@ -431,8 +452,8 @@ def find_similar_compounds(dtxsid, similarity_threshold=0.8):
     
     similarity_threshold : float
         A value from 0 to 1, sent to an EPA API as a threshold for how similar
-        the compounds you're searching for should be.  Higher values will return
-        only highly similar compounds.
+        the substances you're searching for should be.  Higher values will return
+        only highly similar substances.
 
 
     Returns
@@ -467,7 +488,7 @@ def get_similar_methods(dtxsid):
     -------
     A JSON structure containing information on the related methods.
     """
-    similar_substance_info = find_similar_compounds(dtxsid, similarity_threshold=0.5)["similar_substance_info"]
+    similar_substance_info = find_similar_substances(dtxsid, similarity_threshold=0.5)["similar_substance_info"]
     if similar_substance_info is None:
         similar_dtxsids = []
         similarity_dict = {}
@@ -491,14 +512,14 @@ def get_similar_methods(dtxsid):
         )
     results = [c._asdict() for c in db.session.execute(q).all()]
 
-    methods_with_searched_compound = [r["internal_id"] for r in results if r["dtxsid"] == dtxsid]
+    methods_with_searched_substance = [r["internal_id"] for r in results if r["dtxsid"] == dtxsid]
     dtxsid_names = get_names_for_dtxsids([r["dtxsid"] for r in results])
 
-    # merge info, supply a boolean for whether the searched compound is in the
+    # merge info, supply a boolean for whether the searched substance is in the
     # method, and parse the publication year
     results = [{
-            **r, "similarity": similarity_dict[r["dtxsid"]], "compound_name":dtxsid_names.get(r["dtxsid"]),
-            "has_searched_compound": r["internal_id"] in methods_with_searched_compound,
+            **r, "similarity": similarity_dict[r["dtxsid"]], "substance_name":dtxsid_names.get(r["dtxsid"]),
+            "has_searched_substance": r["internal_id"] in methods_with_searched_substance,
             "year_published": util.clean_year(r["date_published"]), "methodology": ", ".join(r["methodologies"])
         } for r in results]
     ids_to_method_names = {r["internal_id"]:r["method_name"] for r in results}
@@ -515,7 +536,7 @@ def batch_search():
     Receives a list of DTXSIDs and returns information on all records in the
     database that contain those DTXSIDs.  If a record contains more than one of
     the searched DTXSIDs, then that record will appear once for each searched
-    compound it contains.
+    substance it contains.
 
     The POST should contain a list of DTXSIDs in a corresponding "dtxsids"
     element, but no other parameters are required.
@@ -524,7 +545,7 @@ def batch_search():
     base_url = request.get_json()["base_url"]
     include_spectrabase = request.get_json()["include_spectrabase"]
 
-    substance_query = db.select(Compounds.dtxsid, Compounds.casrn, Compounds.preferred_name).filter(Compounds.dtxsid.in_(dtxsid_list))
+    substance_query = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsid_list))
     substances = [c._asdict() for c in db.session.execute(substance_query).all()]
     substance_df = pd.DataFrame(substances)
 
@@ -582,11 +603,11 @@ def method_with_spectra_search(search_type, internal_id):
     spectrum_list = [c.spectrum_id for c in db.session.execute(spectrum_q).all()]
 
     info_q = db.select(
-            Contents.internal_id, Contents.dtxsid, Compounds.preferred_name
+            Contents.internal_id, Contents.dtxsid, Substances.preferred_name
         ).filter(
             Contents.internal_id.in_(spectrum_list)
         ).join_from(
-            Contents, Compounds, Contents.dtxsid==Compounds.dtxsid
+            Contents, Substances, Contents.dtxsid==Substances.dtxsid
         )
     info_entries = [c._asdict() for c in db.session.execute(info_q).all()]
     
@@ -617,26 +638,26 @@ def get_spectrum_count_by_type():
     return jsonify({"count": len(db.session.execute(q).all())})
 
 
-@app.route("/compounds_for_ids/", methods=["POST"])
-def get_compounds_for_ids():
+@app.route("/substances_for_ids/", methods=["POST"])
+def get_substances_for_ids():
     """
-    Accepts a list of internal_ids (via POST) and returns a deduplicated list compounds
+    Accepts a list of internal_ids (via POST) and returns a deduplicated list substances
     that appear in those records.
     """
 
     internal_id_list = request.get_json()["internal_id_list"]
 
     q = db.select(
-            Contents.dtxsid, Compounds.preferred_name, Compounds.casrn, Compounds.jchem_inchikey
-        ).filter(Contents.internal_id.in_(internal_id_list)).join_from(Contents, Compounds, Contents.dtxsid==Compounds.dtxsid).distinct()
+            Contents.dtxsid, Substances.preferred_name, Substances.casrn, Substances.jchem_inchikey
+        ).filter(Contents.internal_id.in_(internal_id_list)).join_from(Contents, Substances, Contents.dtxsid==Substances.dtxsid).distinct()
     results = [c._asdict() for c in db.session.execute(q).all()]
     result_df = pd.DataFrame(results)
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer) as writer:
-        result_df.to_excel(writer, sheet_name="Compounds", index=None)
+        result_df.to_excel(writer, sheet_name="Substances", index=None)
 
-    headers = {"Content-Disposition": "attachment; filename=compounds.xlsx", "Content-type":"application/vnd.ms-excel"}
+    headers = {"Content-Disposition": "attachment; filename=Substances.xlsx", "Content-type":"application/vnd.ms-excel"}
 
     return Response(buffer.getvalue(), mimetype="application/vnd.ms-excel", headers=headers)
 
@@ -670,11 +691,11 @@ def spectrum_search(lower_mass_limit, upper_mass_limit, methodology=None):
     constrained by a mass range and an analytical methodology.
     """
     q = db.select(
-            Compounds.dtxsid, Compounds.preferred_name, Contents.internal_id, RecordInfo.description, SpectrumData.spectrum, SpectrumData.spectrum_metadata
+            Substances.dtxsid, Substances.preferred_name, Contents.internal_id, RecordInfo.description, SpectrumData.spectrum, SpectrumData.spectrum_metadata
         ).filter(
-            Compounds.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Spectrum")
+            Substances.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Spectrum")
         ).join_from(
-            Compounds, Contents, Compounds.dtxsid == Contents.dtxsid
+            Substances, Contents, Substances.dtxsid == Contents.dtxsid
         ).join_from(
             Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
         ).join_from(
@@ -743,13 +764,13 @@ def max_similarity_by_dtxsid():
 
     results = get_spectra_for_substances(dtxsids)
 
-    compound_dict = {d:None for d in dtxsids}
+    substance_dict = {d:None for d in dtxsids}
     for r in results:
         similarity = spectrum.calculate_entropy_similarity(user_spectrum, r["spectrum"], da_error=da, ppm_error=ppm)
-        if compound_dict[r["dtxsid"]] is None or compound_dict[r["dtxsid"]] < similarity:
-            compound_dict[r["dtxsid"]] = similarity
+        if substance_dict[r["dtxsid"]] is None or substance_dict[r["dtxsid"]] < similarity:
+            substance_dict[r["dtxsid"]] = similarity
 
-    return jsonify({"results":compound_dict})
+    return jsonify({"results":substance_dict})
 
 
 @app.route("/all_similarities_by_dtxsid/", methods=["POST"])
@@ -767,10 +788,10 @@ def all_similarities_by_dtxsid():
     results = get_spectra_for_substances(dtxsids, [SpectrumData.spectrum_metadata])
 
     # mass query
-    q = db.select(Compounds.dtxsid, Compounds.monoisotopic_mass).filter(Compounds.dtxsid.in_(dtxsids))
+    q = db.select(Substances.dtxsid, Substances.monoisotopic_mass).filter(Substances.dtxsid.in_(dtxsids))
     mass_results = [c._asdict() for c in db.session.execute(q).all()]
 
-    compound_dict = {d:[] for d in dtxsids}
+    substance_dict = {d:[] for d in dtxsids}
     mass_dict = {mr["dtxsid"]: mr["monoisotopic_mass"] for mr in mass_results}
     for r in results:
         result_spectrum = [[mz, i] for mz, i in r["spectrum"] if (mz < (mass_dict[r["dtxsid"]]-1.5)) and (i > min_intensity)]
@@ -786,9 +807,9 @@ def all_similarities_by_dtxsid():
         information = {"Points": len(result_spectrum), "Spectral Entropy": spectral_entropy, "Normalized Entropy": normalized_entropy,
                        "Rating": "Clean" if spectral_entropy <= 3.0 and normalized_entropy <= 0.8 else "Noisy"}
         similarity = spectrum.calculate_entropy_similarity(user_spectrum, combined_spectrum, da_error=da, ppm_error=ppm)
-        compound_dict[r["dtxsid"]].append({"similarity": similarity, "description": description, "metadata": r["spectrum_metadata"], "information": information})
+        substance_dict[r["dtxsid"]].append({"similarity": similarity, "description": description, "metadata": r["spectrum_metadata"], "information": information})
 
-    return jsonify({"results":compound_dict})
+    return jsonify({"results":substance_dict})
 
 
 def get_spectra_for_substances(dtxsid_list, additional_fields=[]):
@@ -844,7 +865,7 @@ def get_image_for_dtxsid(dtxsid):
     """
     Retrieves a substance's image from the database.
     """
-    q = db.select(CompoundImages.png_image).filter(CompoundImages.dtxsid==dtxsid)
+    q = db.select(SubstanceImages.png_image).filter(SubstanceImages.dtxsid==dtxsid)
     result = db.session.execute(q).first()
     if result is not None:
         image = result.png_image
@@ -859,12 +880,12 @@ def get_image_for_dtxsid(dtxsid):
 @app.route("/substring_search/<substring>")
 def substring_search(substring):
     preferred_name_query = db.select(
-            Compounds.preferred_name, Compounds.dtxsid, Compounds.casrn, Compounds.monoisotopic_mass, Compounds.molecular_formula
-        ).filter(Compounds.preferred_name.ilike(f"%{substring}%"))
+            Substances.preferred_name, Substances.dtxsid, Substances.casrn, Substances.monoisotopic_mass, Substances.molecular_formula
+        ).filter(Substances.preferred_name.ilike(f"%{substring}%"))
     synonym_query = db.select(
-            Synonyms.synonym, Synonyms.dtxsid, Compounds.preferred_name, Compounds.casrn, Compounds.monoisotopic_mass, Compounds.molecular_formula
+            Synonyms.synonym, Synonyms.dtxsid, Substances.preferred_name, Substances.casrn, Substances.monoisotopic_mass, Substances.molecular_formula
         ).join_from(
-            Synonyms, Compounds, Synonyms.dtxsid==Compounds.dtxsid
+            Synonyms, Substances, Synonyms.dtxsid==Substances.dtxsid
         ).filter(Synonyms.synonym.ilike(f"%{substring}%"))
     preferred_names = [r._asdict() for r in db.session.execute(preferred_name_query).all()]
     synonyms = [r._asdict() for r in db.session.execute(synonym_query).all()]
@@ -880,6 +901,51 @@ def substring_search(substring):
             del info_dict[s["dtxsid"]]["synonym"]
     info_list = [v for _,v in info_dict.items()]
     return jsonify({"info_list": info_list})
+
+
+@app.route("/get_ms_ready_methods/<inchikey>")
+def get_ms_ready_methods(inchikey):
+    first_block = inchikey.split("-")[0]
+    q = db.select(
+            RecordInfo.source, RecordInfo.internal_id, RecordInfo.link, RecordInfo.record_type, RecordInfo.methodologies,
+            RecordInfo.data_type, RecordInfo.description, func.count(Contents.dtxsid)
+        ).filter(
+            Substances.jchem_inchikey.like(first_block+"%") & (Substances.jchem_inchikey != inchikey)
+        ).join_from(
+            Contents, Substances, Contents.dtxsid == Substances.dtxsid
+        ).join_from(
+            Contents, RecordInfo, Contents.internal_id == RecordInfo.internal_id
+        ).group_by(
+            RecordInfo.internal_id
+        )
+    results = [c._asdict() for c in db.session.execute(q).all()]
+
+    internal_ids = [c["internal_id"] for c in results]
+    method_number_query = db.select(Methods.internal_id, Methods.method_number).filter(Methods.internal_id.in_(internal_ids))
+    method_numbers = [r._asdict() for r in db.session.execute(method_number_query)]
+    method_numbers = {mn["internal_id"]: mn["method_number"] for mn in method_numbers}
+
+    for r in results:
+        if r["internal_id"] in method_numbers:
+            r["method_number"] = method_numbers[r["internal_id"]]
+    
+    return jsonify({"length": len(results), "results": results})
+
+
+@app.route("/get_substance_file_for_record/<internal_id>")
+def get_substance_file_for_record(internal_id):
+    substance_list = find_dtxsids(internal_id).json["compound_list"]
+    substance_list = [(sl["dtxsid"], sl["casrn"], sl["preferred_name"]) for sl in substance_list]
+    substance_df = pd.DataFrame(substance_list, columns=["DTXSID", "CASRN", "Preferred Name"])
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer) as writer:
+        substance_df.to_excel(writer, sheet_name="Substances", index=None)
+
+    headers = {"Content-Disposition": "attachment; filename=substances.xlsx", "Content-type":"application/vnd.ms-excel"}
+
+    return Response(buffer.getvalue(), mimetype="application/vnd.ms-excel", headers=headers)
+
 
 
 if __name__ == "__main__":
