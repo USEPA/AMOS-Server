@@ -806,8 +806,9 @@ def all_similarities_by_dtxsid():
         normalized_entropy = spectral_entropy/len(combined_spectrum)
         information = {"Points": len(result_spectrum), "Spectral Entropy": spectral_entropy, "Normalized Entropy": normalized_entropy,
                        "Rating": "Clean" if spectral_entropy <= 3.0 and normalized_entropy <= 0.8 else "Noisy"}
-        similarity = spectrum.calculate_entropy_similarity(user_spectrum, combined_spectrum, da_error=da, ppm_error=ppm)
-        substance_dict[r["dtxsid"]].append({"similarity": similarity, "description": description, "metadata": r["spectrum_metadata"], "information": information})
+        entropy_similarity = spectrum.calculate_entropy_similarity(user_spectrum, combined_spectrum, da_error=da, ppm_error=ppm)
+        cosine_similarity = spectrum.cosine_similarity(user_spectrum, combined_spectrum)
+        substance_dict[r["dtxsid"]].append({"entropy_similarity": entropy_similarity, "cosine_similarity": cosine_similarity, "description": description, "metadata": r["spectrum_metadata"], "information": information})
 
     return jsonify({"results":substance_dict})
 
@@ -934,7 +935,11 @@ def get_ms_ready_methods(inchikey):
 
 @app.route("/get_substance_file_for_record/<internal_id>")
 def get_substance_file_for_record(internal_id):
-    substance_list = find_dtxsids(internal_id).json["compound_list"]
+    """
+    Creates an Excel workbook listing the substances in the specified
+    record.
+    """
+    substance_list = find_dtxsids(internal_id).json["substance_list"]
     substance_list = [(sl["dtxsid"], sl["casrn"], sl["preferred_name"]) for sl in substance_list]
     substance_df = pd.DataFrame(substance_list, columns=["DTXSID", "CASRN", "Preferred Name"])
 

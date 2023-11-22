@@ -1,6 +1,8 @@
 from collections import defaultdict
 from math import log
 
+import pandas as pd
+
 
 def calculate_entropy_similarity(spectrum_a, spectrum_b, da_error=None, ppm_error=None):
     """
@@ -43,6 +45,43 @@ def calculate_spectral_entropy(spectrum):
     return sum([-1 * i * log(i) for i in scaled_intensities])
 
 
+def cosine_similarity(spectrum1, spectrum2):
+    """
+    Calculates the cosine similarity, based on code I got from Alex,
+    which is in turn based on the paper "Optimization & Testing of Mass
+    Spectral Library Search Algorithms for Compound Identification" by
+    Stein & Scott.
+    """
+    df1 = pd.DataFrame(spectrum1, columns=["mz", "intensity"])
+    df2 = pd.DataFrame(spectrum2, columns=["mz", "intensity"])
+    df1["binned_mz"] = df1["mz"].apply(round, ndigits=0)
+    df2["binned_mz"] = df2["mz"].apply(round, ndigits=0)
+    merged_df = pd.merge(df1, df2, on="binned_mz", how="outer")
+
+    # The merge renames the mz columns to keep them distinct -- mz_x is
+    # the mz column from df1, and mz_y is from df2
+    merged_df["mz_delta"] = abs(merged_df["mz_x"] - merged_df["mz_y"])
+    merged_df["mz_x"].fillna(merged_df["mz_y"], inplace=True)
+    merged_df["mz_y"].fillna(merged_df["mz_x"], inplace=True)
+    merged_df.fillna(0, inplace=True)
+    merged_df.sort_values(by="mz_delta", ascending=True, inplace=True)
+
+    aligned_df = merged_df[(~merged_df.duplicated(subset="mz_x", keep="first")) & (~merged_df.duplicated(subset="mz_y", keep="first"))].copy()
+    aligned_df.drop(["binned_mz", "mz_delta"], axis=1, inplace=True)
+    aligned_df.sort_values(by="mz_x", inplace=True)
+    aligned_df.reset_index(drop=True, inplace=True)
+
+    # m and n are values found by trial and error in Stein & Scott's
+    # paper to be a useful adjustment to the calculation
+    m, n = 0.5, 0.5
+    aligned_df["weighted_x"] = aligned_df["mz_x"].pow(m) * aligned_df["intensity_x"].pow(n)
+    aligned_df["weighted_y"] = aligned_df["mz_y"].pow(m) * aligned_df["intensity_y"].pow(n)
+    numerator = sum(aligned_df["weighted_x"] * aligned_df["weighted_y"]) ** 2
+    denominator = sum(aligned_df["weighted_x"].pow(2)) * sum(aligned_df["weighted_y"].pow(2))
+    return numerator/denominator
+
+
+
 def combine_peaks(spectrum, da_error=0.05, ppm_error=None):
     """
     Combines the peaks of a spectrum that are within a certain margin of error
@@ -72,6 +111,7 @@ def combine_peaks(spectrum, da_error=0.05, ppm_error=None):
             else:
                 mz_window_size = 0
 
+            # find lowest mz within window
             lowest_mz_peak_index = i
             while lowest_mz_peak_index > 0:
                 mz_delta = mz - spectrum_copy[lowest_mz_peak_index-1][0]
@@ -79,7 +119,8 @@ def combine_peaks(spectrum, da_error=0.05, ppm_error=None):
                     lowest_mz_peak_index -= 1
                 else:
                     break
-
+            
+            # find highest mz within window
             highest_mz_peak_index = i
             while highest_mz_peak_index < len(spectrum_copy)-1:
                 mz_delta = spectrum_copy[highest_mz_peak_index+1][0] - mz
