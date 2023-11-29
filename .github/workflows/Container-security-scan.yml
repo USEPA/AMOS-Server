@@ -36,11 +36,23 @@ jobs:
         
       - name: Docker build
         run: docker build -f Dockerfile -t amos-server-security-${{ github.head_ref || github.ref_name }} .
-          
+      
+      - name: Create Output Folder
+        run: mkdir output  
+        
       - name: Run security scan on the container
         uses: aquasecurity/trivy-action@0.12.0
         id:   scan
         with:
           image-ref: 'amos-server-security-${{ github.head_ref || github.ref_name }}'
-          format: 'table'
+          format: template
+          template: "@/contrib/html.tpl"
+          output: ./output/trivy-report.html
           severity: 'CRITICAL,HIGH'
+          
+      - name: Use the Upload Artifact GitHub Action
+        uses: actions/upload-artifact@v3
+        with: 
+          name: container-scan-report
+          path: output
+      
