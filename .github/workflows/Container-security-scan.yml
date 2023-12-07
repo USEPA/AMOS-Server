@@ -57,17 +57,17 @@ jobs:
           path: output
           
       - name: remove previous trivy report
-        run: rm -rf /data/watchtower/amos/container-results/amos-Server/amos-server-report.html
+        run: rm -rf /data/watchtower/amos/container-results/amos-server/amos-server-report.html
    
       - name: download artifacts to the computer    
         uses: actions/download-artifact@v3
         with:
           name: amos-server-container-scan-report
-          path: /data/watchtower/amos/container-results/amos-Server
+          path: /data/watchtower/amos/container-results/amos-server
           
       - name:  send email every monday and thursday
         run: |
-           cd /data/watchtower/amos/container-results/amos-Server
+           cd /data/watchtower/amos/container-results/amos-server
            ls -la
            python email.py 
           
