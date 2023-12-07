@@ -1,0 +1,17 @@
+name: email 
+
+on:
+  schedule:
+    - cron: '00 9 * * 1,4'
+    
+jobs:
+  send-email:
+    runs-on: "th887" 
+    steps:  
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    - name:  send email every monday and thursday
+      run: |
+           cd /data/watchtower/amos/container-results/amos-server
+           ls -la
+           python email.py 
