@@ -2,6 +2,9 @@ import csv
 import io
 import re
 
+from flask import Response
+import pandas as pd
+
 def clean_year(year_value):
     """
     Convenience function intended to take care of showing just the year of date
@@ -41,3 +44,12 @@ def make_csv_string(data_rows):
     writer.writeheader()
     writer.writerows(data_rows)
     return f.getvalue()
+
+
+def make_excel_file(df_dict):
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer) as writer:
+        for sheet_name, df in df_dict.items():
+            df.to_excel(writer, sheet_name=sheet_name, index=None)
+    
+    return buffer.getvalue()

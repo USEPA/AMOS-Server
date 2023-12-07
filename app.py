@@ -1,6 +1,5 @@
 from collections import Counter, defaultdict
 from enum import Enum
-import io
 import re
 import os
 
@@ -10,6 +9,7 @@ import pandas as pd
 import requests
 from sqlalchemy import func
 
+import common_queries as cq
 import spectrum
 from table_definitions import db, SubstanceImages, Substances, Contents, FactSheets, \
     Methods, MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
@@ -147,17 +147,6 @@ def get_substances_for_search_term(search_term):
     return jsonify({"ambiguity": ambiguity, "substances": substances})
 
 
-def get_names_for_dtxsids(dtxsid_list):
-    """
-    Creates a dictionary that maps a list of DTXSIDs to the EPA-preferred name
-    for the substance.
-    """
-    q = db.select(Substances.preferred_name, Substances.dtxsid).filter(Substances.dtxsid.in_(dtxsid_list))
-    results = [c._asdict() for c in db.session.execute(q).all()]
-    names_for_dtxsids = {r["dtxsid"]:r["preferred_name"] for r in results}
-    return names_for_dtxsids
-
-
 @app.route("/")
 def top_page():
     """
@@ -197,13 +186,14 @@ def search_results(dtxsid):
     )
     records = [r._asdict() for r in db.session.execute(record_query)]
 
-    method_number_query = db.select(Methods.internal_id, Methods.method_number).filter(Methods.internal_id.in_(internal_ids))
-    method_numbers = [r._asdict() for r in db.session.execute(method_number_query)]
-    method_numbers = {mn["internal_id"]: mn["method_number"] for mn in method_numbers}
-
+    # add method numbers to methods found in the search
+    method_number_query = db.select(Methods.internal_id, Methods.method_number, Methods.document_type).filter(Methods.internal_id.in_(internal_ids))
+    method_info = [r._asdict() for r in db.session.execute(method_number_query)]
+    method_info = {mn["internal_id"]: {"method_number": mn["method_number"], "document_type": mn["document_type"]} for mn in method_info}
     for r in records:
-        if r["internal_id"] in method_numbers:
-            r["method_number"] = method_numbers[r["internal_id"]]
+        if r["internal_id"] in method_info:
+            r["method_number"] = method_info[r["internal_id"]]["method_number"]
+            r["method_type"] = method_info[r["internal_id"]]["document_type"]
 
     result_record_types = [r["record_type"] for r in records]
     record_type_counts = Counter(result_record_types)
@@ -364,7 +354,7 @@ def get_pdf(record_type, internal_id):
         response.headers['Content-Disposition'] = f"inline; filename=\"{internal_id}\""
         return response
     else:
-        return "Error: PDF name not found."
+        return f"Error: no PDF found for internal ID '{internal_id}'."
 
 
 @app.route("/get_pdf_metadata/<record_type>/<internal_id>")
@@ -389,9 +379,9 @@ def get_pdf_metadata(record_type, internal_id):
     method has associated spectra.
     """
     if record_type.lower() == "fact sheet":
-        q = db.select(FactSheets.fact_sheet_name.label("doc_name"), FactSheets.pdf_metadata).filter(FactSheets.internal_id==internal_id)
+        q = db.select(FactSheets.fact_sheet_name.label("pdf_name"), FactSheets.pdf_metadata).filter(FactSheets.internal_id==internal_id)
     elif record_type.lower() == "method":
-        q = db.select(Methods.method_name.label("doc_name"), Methods.pdf_metadata, Methods.has_associated_spectra).filter(Methods.internal_id==internal_id)
+        q = db.select(Methods.method_name.label("pdf_name"), Methods.pdf_metadata, Methods.has_associated_spectra).filter(Methods.internal_id==internal_id)
     else:
         return f"Error: invalid record type {record_type}."
 
@@ -399,12 +389,12 @@ def get_pdf_metadata(record_type, internal_id):
     if data_row is not None:
         data_row = data_row._asdict()
         return jsonify({
-            "pdf_name": data_row["doc_name"],
+            "pdf_name": data_row["pdf_name"],
             "metadata_rows": data_row["pdf_metadata"],
             "has_associated_spectra": data_row.get("has_associated_spectra", False)
         })
     else:
-        return "Error: PDF name not found."
+        return f"Error: no PDF found for internal ID '{internal_id}'."
 
 
 
@@ -513,7 +503,7 @@ def get_similar_methods(dtxsid):
     results = [c._asdict() for c in db.session.execute(q).all()]
 
     methods_with_searched_substance = [r["internal_id"] for r in results if r["dtxsid"] == dtxsid]
-    dtxsid_names = get_names_for_dtxsids([r["dtxsid"] for r in results])
+    dtxsid_names = cq.names_for_dtxsids([r["dtxsid"] for r in results])
 
     # merge info, supply a boolean for whether the searched substance is in the
     # method, and parse the publication year
@@ -561,7 +551,7 @@ def batch_search():
     for i, r in enumerate(records):
         # if a record has no link, have it link back to the search page of the Vue app with the row preselected
         if r["link"] is None:
-            records[i]["link"] = f"{base_url}/search/{r['dtxsid']}?initial_row_selected={r['internal_id']}"
+            records[i]["link"] = f"{base_url}/view_spectrum/{r['internal_id']}"
     record_df = pd.DataFrame(records)
 
     result_df = substance_df.merge(record_df, how="right", on="dtxsid")
@@ -571,14 +561,9 @@ def batch_search():
     result_counts = pd.DataFrame({"dtxsid":dtxsid_list}).merge(substance_df, how="left", on="dtxsid").merge(result_counts, how="left", on="dtxsid")
     result_counts["num_records"] = result_counts["num_records"].fillna(0)
 
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer) as writer:
-        result_counts.to_excel(writer, sheet_name="Substances", index=None)
-        result_df.to_excel(writer, sheet_name="Records", index=None)
-
+    excel_file = util.make_excel_file({"Substances": result_counts, "Records": result_df})
     headers = {"Content-Disposition": "attachment; filename=batch_search.xlsx", "Content-type":"application/vnd.ms-excel"}
-
-    return Response(buffer.getvalue(), mimetype="application/vnd.ms-excel", headers=headers)
+    return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
 
 
 @app.route("/method_with_spectra/<search_type>/<internal_id>")
@@ -653,13 +638,9 @@ def get_substances_for_ids():
     results = [c._asdict() for c in db.session.execute(q).all()]
     result_df = pd.DataFrame(results)
 
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer) as writer:
-        result_df.to_excel(writer, sheet_name="Substances", index=None)
-
+    excel_file = util.make_excel_file({"Substances": result_df})
     headers = {"Content-Disposition": "attachment; filename=Substances.xlsx", "Content-type":"application/vnd.ms-excel"}
-
-    return Response(buffer.getvalue(), mimetype="application/vnd.ms-excel", headers=headers)
+    return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
 
 
 @app.route("/spectrum_similarity_search/", methods=["POST"])
@@ -734,12 +715,8 @@ def get_record_counts_by_dtxsid():
     in the database.
     """
     dtxsid_list = request.get_json()["dtxsids"]
-    q = db.select(Contents.dtxsid, RecordInfo.record_type, func.count(RecordInfo.internal_id)).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id).filter(Contents.dtxsid.in_(dtxsid_list)).group_by(Contents.dtxsid, RecordInfo.record_type)
-    results = [c._asdict() for c in db.session.execute(q).all()]
-    result_dict = defaultdict(dict)
-    for r in results:
-        result_dict[r["dtxsid"]].update({r["record_type"]: r["count"]})
-    return jsonify(result_dict)
+    record_count_dict = cq.record_counts_by_dtxsid(dtxsid_list)
+    return jsonify(record_count_dict)
 
 
 @app.route("/max_similarity_by_dtxsid/", methods=["POST"])
@@ -857,7 +834,7 @@ def database_summary():
 def spectra_for_substances():
     dtxsids = request.get_json()["dtxsids"]
     spectrum_results = get_spectra_for_substances(dtxsids)
-    names_for_dtxsids = get_names_for_dtxsids(dtxsids)
+    names_for_dtxsids = cq.names_for_dtxsids(dtxsids)
     return jsonify({"spectra":spectrum_results, "substance_mapping": names_for_dtxsids})
 
 
@@ -901,6 +878,15 @@ def substring_search(substring):
             info_dict[s["dtxsid"]] = {**s, "synonyms": [s["synonym"]]}
             del info_dict[s["dtxsid"]]["synonym"]
     info_list = [v for _,v in info_dict.items()]
+
+    dtxsids = [il["dtxsid"] for il in info_list]
+    record_counts = cq.record_counts_by_dtxsid(dtxsids)
+    for il in info_list:
+        records = record_counts[il["dtxsid"]]
+        il["methods"] = records.get("Method", 0)
+        il["fact_sheets"] = records.get("Fact Sheet", 0)
+        il["spectra"] = records.get("Spectrum", 0)
+
     return jsonify({"info_list": info_list})
 
 
@@ -943,13 +929,9 @@ def get_substance_file_for_record(internal_id):
     substance_list = [(sl["dtxsid"], sl["casrn"], sl["preferred_name"]) for sl in substance_list]
     substance_df = pd.DataFrame(substance_list, columns=["DTXSID", "CASRN", "Preferred Name"])
 
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer) as writer:
-        substance_df.to_excel(writer, sheet_name="Substances", index=None)
-
+    excel_file = util.make_excel_file({"Substances": substance_df})
     headers = {"Content-Disposition": "attachment; filename=substances.xlsx", "Content-type":"application/vnd.ms-excel"}
-
-    return Response(buffer.getvalue(), mimetype="application/vnd.ms-excel", headers=headers)
+    return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
 
 
 
