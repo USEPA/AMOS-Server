@@ -832,6 +832,9 @@ def database_summary():
 
 @app.route("/spectra_for_substances/", methods=["POST"])
 def spectra_for_substances():
+    """
+    Given a list of DTXSIDs, return all spectra for those substances.
+    """
     dtxsids = request.get_json()["dtxsids"]
     spectrum_results = get_spectra_for_substances(dtxsids)
     names_for_dtxsids = cq.names_for_dtxsids(dtxsids)
@@ -857,6 +860,12 @@ def get_image_for_dtxsid(dtxsid):
 
 @app.route("/substring_search/<substring>")
 def substring_search(substring):
+    """
+    Searches the database for substances by substring.  Both the
+    preferred name and the synonyms are searched.  This returns a list
+    of substances, synonyms that matched the search (if any), and the
+    record counts for each substance.
+    """
     preferred_name_query = db.select(
             Substances.preferred_name, Substances.dtxsid, Substances.casrn, Substances.monoisotopic_mass, Substances.molecular_formula
         ).filter(Substances.preferred_name.ilike(f"%{substring}%"))
@@ -892,6 +901,12 @@ def substring_search(substring):
 
 @app.route("/get_ms_ready_methods/<inchikey>")
 def get_ms_ready_methods(inchikey):
+    """
+    Retrieves a list of methods that contain the MS-Ready forms of a
+    given substance but not the substance itself.  These methods are
+    found by looking for substances which match the first block of the
+    given InChIKey.
+    """
     first_block = inchikey.split("-")[0]
     q = db.select(
             RecordInfo.source, RecordInfo.internal_id, RecordInfo.link, RecordInfo.record_type, RecordInfo.methodologies,
@@ -913,6 +928,7 @@ def get_ms_ready_methods(inchikey):
     method_numbers = {mn["internal_id"]: mn["method_number"] for mn in method_numbers}
 
     for r in results:
+        r["ms_ready"] = True   #flag for Ag Grid
         if r["internal_id"] in method_numbers:
             r["method_number"] = method_numbers[r["internal_id"]]
     
