@@ -96,3 +96,24 @@ SUBSTANCE IMAGES
 This table stores images of substances which have images of the structure available in DSSTox's database but which are not yet publicly available on the API that CompTox gets its images from.
 - dtxsid: The DTXSID of the substance.
 - png_image: The image of the substance, as a binary blob.
+
+
+ANALYTICAL QC
+This table stores a collection of spectra-containing PDFs that are from the Analytical QC project.  Since the project itself has a great deal of supporting data unique to it, a special table was warranted.
+- internal_id: Same as elsewhere.
+- pdf_data: The spectrum PDF, stored as a binary blob.
+- pdf_metadata: Metadata associated with the PDF.
+- filename: Original filename of the file.
+- experiment_date: Date of the experiment, in YYYY-MM-DD format.
+- study: Study that the record belonged to.
+- timepoint: Time of the measurement, usually either the first (T0) or last (T4) timepoint.
+- batch: Batch of the sample.
+- well: Well of the sample.
+- first_timepoint: Rating of the sample quality at the first timepoint (T0).  Meanings of the ratings are included in the frontend.
+- last_timepoint: Rating of the sample quality at the last timepoint (T4).  Meanings of the ratings are included in the frontend.
+- stability_call: Rating of the stability of the sample.  Meanings of the ratings are included in the frontend.
+- tox21_id: Numeric identifier in the Tox21 project.
+- ncgc_id: Identifier for the NIH Chemical Genomics Center (NCGC) pharmaceutical collection.
+- pubchem_sid: PubChem ID for the substance.
+- bottle_barcode: Barcode for the sample bottle.
+- annotation: Additional annotation for the experiment.

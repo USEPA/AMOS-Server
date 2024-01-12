@@ -123,3 +123,25 @@ class SubstanceImages(db.Model):
     __table_args__ = {'schema': 'amos'}
     dtxsid = db.Column(db.TEXT, primary_key=True)
     png_image = db.Column(BYTEA)
+
+
+class AnalyticalQC(db.Model):
+    __tablename__ = "analytical_qc"
+    __table_args__ = {'schema': 'amos'}
+    internal_id = db.Column(db.TEXT, primary_key=True)
+    pdf_data = db.Column(BYTEA)
+    pdf_metadata = db.Column(db.JSON)
+    filename = db.Column(db.TEXT)
+    experiment_date = db.Column(db.TEXT)
+    study = db.Column(db.TEXT)
+    timepoint = db.Column(db.TEXT)
+    batch = db.Column(db.TEXT)
+    well = db.Column(db.TEXT)
+    first_timepoint = db.Column(db.TEXT)
+    last_timepoint = db.Column(db.TEXT)
+    stability_call = db.Column(db.TEXT)
+    tox21_id = db.Column(db.TEXT)
+    ncgc_id = db.Column(db.TEXT)
+    pubchem_sid = db.Column(db.TEXT)
+    bottle_barcode = db.Column(db.TEXT)
+    annotation = db.Column(db.TEXT)

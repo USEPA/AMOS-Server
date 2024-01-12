@@ -11,8 +11,9 @@ from sqlalchemy import func
 
 import common_queries as cq
 import spectrum
-from table_definitions import db, SubstanceImages, Substances, Contents, FactSheets, \
-    Methods, MethodsWithSpectra, RecordInfo, SpectrumData, SpectrumPDFs, Synonyms
+from table_definitions import db, AnalyticalQC, Contents, FactSheets, \
+    Methods, MethodsWithSpectra, RecordInfo, SpectrumData, \
+    SubstanceImages, Substances, SpectrumPDFs, Synonyms
 import util
 import sentry_sdk
 from sentry_sdk.integrations.flask import FlaskIntegration
@@ -337,18 +338,11 @@ def get_pdf(record_type, internal_id):
     -------
     The PDF being searched, in the form of an <iframe>-compatible element.
     """
-    if record_type.lower() == "fact sheet":
-        q = db.select(FactSheets.pdf_data).filter(FactSheets.internal_id==internal_id)
-    elif record_type.lower() == "method":
-        q = db.select(Methods.pdf_data).filter(Methods.internal_id==internal_id)
-    elif record_type.lower() == "spectrum pdf":
-        q = db.select(SpectrumPDFs.pdf_data).filter(SpectrumPDFs.internal_id==internal_id)
-    else:
-        return f"Error: invalid record type {record_type}."
     
-    data_row = db.session.execute(q).first()
-    if data_row is not None:
-        pdf_content = data_row.pdf_data
+    pdf_information = cq.pdf_with_info(internal_id, record_type.lower())
+    
+    if "error" not in pdf_information:
+        pdf_content = pdf_information["pdf_data"]
         response = make_response(pdf_content)
         response.headers['Content-Type'] = "application/pdf"
         response.headers['Content-Disposition'] = f"inline; filename=\"{internal_id}\""
@@ -416,16 +410,11 @@ def find_dtxsids(internal_id):
     A JSON structure containing a list of substance information.  This will be
     empty if no records were found.
     """
-    q = db.select(Contents.dtxsid).filter(Contents.internal_id==internal_id)
-    dtxsids = db.session.execute(q).all()
-    if len(dtxsids) > 0:
-        dtxsids = [d[0] for d in dtxsids]
-        q2 = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsids))
-        substance_info = db.session.execute(q2).all()
-        return jsonify({"substance_list":[c._asdict() for c in substance_info]})
-    else:
+
+    substance_list = cq.substances_for_ids(internal_id)
+    if len(substance_list) == 0:
         print(f"Warning -- no DTXSIDs found for internal ID {internal_id}")
-        return jsonify({"substance_list":[]})
+    return jsonify({"substance_list": substance_list})
 
 
 @app.route("/substance_similarity_search/<dtxsid>")
@@ -546,10 +535,12 @@ def batch_search():
         )
     records = [c._asdict() for c in db.session.execute(record_query).all()]
     if not include_spectrabase:
-        # don't add as a filter to the query; it'll miss records without sources if it's added there
+        # don't add this as a filter to the query; it'll miss records without sources if it's added there
         records = [r for r in records if r["source"] != "SpectraBase"]
     for i, r in enumerate(records):
-        # if a record has no link, have it link back to the search page of the Vue app with the row preselected
+        # if a record has no link, have it link back AMOS's spectrum viewer;
+        # currently only spectra should be linkless, but this should be fixed to
+        # be a more general case in the future, just in case
         if r["link"] is None:
             records[i]["link"] = f"{base_url}/view_spectrum/{r['internal_id']}"
     record_df = pd.DataFrame(records)
@@ -632,15 +623,20 @@ def get_substances_for_ids():
 
     internal_id_list = request.get_json()["internal_id_list"]
 
-    q = db.select(
-            Contents.dtxsid, Substances.preferred_name, Substances.casrn, Substances.jchem_inchikey
-        ).filter(Contents.internal_id.in_(internal_id_list)).join_from(Contents, Substances, Contents.dtxsid==Substances.dtxsid).distinct()
-    results = [c._asdict() for c in db.session.execute(q).all()]
-    result_df = pd.DataFrame(results)
+    substances = cq.substances_for_ids(internal_id_list, [Substances.jchem_inchikey])
+    substance_df = pd.DataFrame(substances)
 
-    excel_file = util.make_excel_file({"Substances": result_df})
+    excel_file = util.make_excel_file({"Substances": substance_df})
     headers = {"Content-Disposition": "attachment; filename=Substances.xlsx", "Content-type":"application/vnd.ms-excel"}
     return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
+
+
+@app.route("/count_substances_in_ids/", methods=["POST"])
+def count_substances_in_ids():
+    internal_id_list = request.get_json()["internal_id_list"]
+    q = db.select(func.count(Contents.dtxsid.distinct())).filter(Contents.internal_id.in_(internal_id_list))
+    dtxsid_count = db.session.execute(q).first()._asdict()
+    return jsonify(dtxsid_count)
 
 
 @app.route("/spectrum_similarity_search/", methods=["POST"])
@@ -656,7 +652,7 @@ def spectrum_similarity_search():
     methodology = request.json["methodology"]
     user_spectrum = request.json["spectrum"]
 
-    results = spectrum_search(lower_mass_limit, upper_mass_limit, methodology)
+    results = cq.spectrum_search(lower_mass_limit, upper_mass_limit, methodology)
 
     substance_mapping = {}
     for r in results:
@@ -665,27 +661,6 @@ def spectrum_similarity_search():
         r["similarity"] = spectrum.calculate_entropy_similarity(r["spectrum"], user_spectrum)
     return jsonify({"result_length":len(results), "unique_substances":len(substance_mapping), "results":results, "substance_mapping": substance_mapping})
 
-
-def spectrum_search(lower_mass_limit, upper_mass_limit, methodology=None):
-    """
-    Retrieves basic information on a set of spectra from the database,
-    constrained by a mass range and an analytical methodology.
-    """
-    q = db.select(
-            Substances.dtxsid, Substances.preferred_name, Contents.internal_id, RecordInfo.description, SpectrumData.spectrum, SpectrumData.spectrum_metadata
-        ).filter(
-            Substances.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Spectrum")
-        ).join_from(
-            Substances, Contents, Substances.dtxsid == Contents.dtxsid
-        ).join_from(
-            Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
-        ).join_from(
-            Contents, SpectrumData, Contents.internal_id==SpectrumData.internal_id
-        )
-    if methodology:
-        q = q.filter(RecordInfo.methodologies.any(methodology))
-    results = [c._asdict() for c in db.session.execute(q).all()]
-    return results
 
 
 @app.route("/spectral_entropy/", methods=["POST"])
@@ -739,7 +714,7 @@ def max_similarity_by_dtxsid():
     da = request_json.get("da_window")
     ppm = request_json.get("ppm_window")
 
-    results = get_spectra_for_substances(dtxsids)
+    results = cq.get_spectra_for_substances(dtxsids)
 
     substance_dict = {d:None for d in dtxsids}
     for r in results:
@@ -762,7 +737,7 @@ def all_similarities_by_dtxsid():
     ppm = request_json.get("ppm_window")
     min_intensity = request_json.get("min_intensity", 0)
 
-    results = get_spectra_for_substances(dtxsids, [SpectrumData.spectrum_metadata])
+    results = cq.get_spectra_for_substances(dtxsids, [SpectrumData.spectrum_metadata])
 
     # mass query
     q = db.select(Substances.dtxsid, Substances.monoisotopic_mass).filter(Substances.dtxsid.in_(dtxsids))
@@ -788,20 +763,6 @@ def all_similarities_by_dtxsid():
         substance_dict[r["dtxsid"]].append({"entropy_similarity": entropy_similarity, "cosine_similarity": cosine_similarity, "description": description, "metadata": r["spectrum_metadata"], "information": information})
 
     return jsonify({"results":substance_dict})
-
-
-def get_spectra_for_substances(dtxsid_list, additional_fields=[]):
-    """
-    Takes a list of DTXSIDs and returns all spectra associated with those DTXSIDs.
-    """
-    q = db.select(Contents.dtxsid, RecordInfo.internal_id, RecordInfo.description, SpectrumData.spectrum, *additional_fields).filter(
-        (Contents.dtxsid.in_(dtxsid_list)) & (RecordInfo.data_type == "Spectrum")
-    ).join_from(
-        Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
-    ).join_from(
-        Contents, SpectrumData, Contents.internal_id==SpectrumData.internal_id
-    )
-    return [c._asdict() for c in db.session.execute(q).all()]
 
 
 @app.route("/get_info_by_id/<internal_id>")
@@ -836,7 +797,7 @@ def spectra_for_substances():
     Given a list of DTXSIDs, return all spectra for those substances.
     """
     dtxsids = request.get_json()["dtxsids"]
-    spectrum_results = get_spectra_for_substances(dtxsids)
+    spectrum_results = cq.get_spectra_for_substances(dtxsids)
     names_for_dtxsids = cq.names_for_dtxsids(dtxsids)
     return jsonify({"spectra":spectrum_results, "substance_mapping": names_for_dtxsids})
 
@@ -948,6 +909,21 @@ def get_substance_file_for_record(internal_id):
     excel_file = util.make_excel_file({"Substances": substance_df})
     headers = {"Content-Disposition": "attachment; filename=substances.xlsx", "Content-type":"application/vnd.ms-excel"}
     return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
+
+
+@app.route("/analytical_qc_list/")
+def analytical_qc_list():
+    q = db.select(
+        Contents.internal_id, Contents.dtxsid, Substances.preferred_name, Substances.casrn,
+        AnalyticalQC.experiment_date, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint,
+        AnalyticalQC.stability_call, AnalyticalQC.annotation
+    ).join_from(
+        AnalyticalQC, Contents, AnalyticalQC.internal_id == Contents.internal_id
+    ).join_from(
+        Contents, Substances, Contents.dtxsid == Substances.dtxsid
+    )
+    results = [c._asdict() for c in db.session.execute(q).all()]
+    return jsonify({"results": results})
 
 
 

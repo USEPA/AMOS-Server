@@ -2,7 +2,6 @@ import csv
 import io
 import re
 
-from flask import Response
 import pandas as pd
 
 def clean_year(year_value):
@@ -39,6 +38,10 @@ def clean_year(year_value):
 
 
 def make_csv_string(data_rows):
+    """
+    Takes a list of dictionaries of the same type and translates them into a
+    single CSV string.
+    """
     f = io.StringIO("")
     writer = csv.DictWriter(f, fieldnames=data_rows[0].keys())
     writer.writeheader()
@@ -47,6 +50,11 @@ def make_csv_string(data_rows):
 
 
 def make_excel_file(df_dict):
+    """
+    Constructs an in-memory Excel file using the specified dictionary of data
+    frames.  Keys will be used as the sheet names while the values should be the
+    data frames to store.
+    """
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer) as writer:
         for sheet_name, df in df_dict.items():
