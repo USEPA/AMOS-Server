@@ -59,8 +59,8 @@ class RecordInfo(db.Model):
         }
 
 
-class SpectrumData(db.Model):
-    __tablename__ = "spectrum_data"
+class MassSpectra(db.Model):
+    __tablename__ = "mass_spectra"
     __table_args__ = {'schema': 'amos'}
     internal_id = db.Column(db.TEXT, primary_key=True)
     splash = db.Column(db.VARCHAR(45))
@@ -145,3 +145,31 @@ class AnalyticalQC(db.Model):
     pubchem_sid = db.Column(db.TEXT)
     bottle_barcode = db.Column(db.TEXT)
     annotation = db.Column(db.TEXT)
+
+
+class DatabaseSummary(db.Model):
+    __tablename__ = "database_summary"
+    __table_args__ = {'schema': 'amos'}
+    count_type = db.Column(db.VARCHAR(32), primary_key=True)
+    subtype = db.Column(db.VARCHAR(32), primary_key=True)
+    value_count = db.Column(db.INTEGER)
+
+    def get_row_contents(self):
+        return {
+            "count_type": self.count_type, "subtype": self.subtype,
+            "value_count": self.value_count
+        }
+
+class AdditionalSources(db.Model):
+    __tablename__ = "additional_sources"
+    __table_args__ = {'schema': 'amos'}
+    dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
+    source_name = db.Column(db.TEXT, primary_key=True)
+    link = db.Column(db.TEXT)
+    description = db.Column(db.TEXT)
+
+    def get_row_contents(self):
+        return {
+            "dtxsid": self.dtxsid, "source_name": self.source_name, 
+            "link": self.link, "description": self.description
+        }

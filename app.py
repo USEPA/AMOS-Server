@@ -12,7 +12,7 @@ from sqlalchemy import func
 import common_queries as cq
 import spectrum
 from table_definitions import db, AnalyticalQC, Contents, FactSheets, \
-    Methods, MethodsWithSpectra, RecordInfo, SpectrumData, \
+    Methods, MethodsWithSpectra, RecordInfo, MassSpectra, \
     SubstanceImages, Substances, SpectrumPDFs, Synonyms
 import util
 import sentry_sdk
@@ -206,8 +206,8 @@ def search_results(dtxsid):
     return jsonify({"records":records, "record_type_counts":record_type_counts})
 
 
-@app.route("/get_spectrum/<internal_id>")
-def retrieve_spectrum(internal_id):
+@app.route("/get_mass_spectrum/<internal_id>")
+def retrieve_mass_spectrum(internal_id):
     """
     Endpoint for retrieving a specified mass spectrum from the database.
 
@@ -221,9 +221,9 @@ def retrieve_spectrum(internal_id):
     A JSON structure containing the information about the spectrum.
     """
     q = db.select(
-            SpectrumData.spectrum, SpectrumData.splash, SpectrumData.normalized_entropy, SpectrumData.spectral_entropy,
-            SpectrumData.has_associated_method, SpectrumData.spectrum_metadata
-        ).filter(SpectrumData.internal_id==internal_id)
+            MassSpectra.spectrum, MassSpectra.splash, MassSpectra.normalized_entropy, MassSpectra.spectral_entropy,
+            MassSpectra.has_associated_method, MassSpectra.spectrum_metadata
+        ).filter(MassSpectra.internal_id==internal_id)
     data_row = db.session.execute(q).first()
     if data_row is not None:
         data_dict = data_row._asdict()
@@ -339,10 +339,9 @@ def get_pdf(record_type, internal_id):
     The PDF being searched, in the form of an <iframe>-compatible element.
     """
     
-    pdf_information = cq.pdf_with_info(internal_id, record_type.lower())
+    pdf_content = cq.pdf_by_id(internal_id, record_type.lower())
     
-    if "error" not in pdf_information:
-        pdf_content = pdf_information["pdf_data"]
+    if pdf_content:
         response = make_response(pdf_content)
         response.headers['Content-Type'] = "application/pdf"
         response.headers['Content-Disposition'] = f"inline; filename=\"{internal_id}\""
@@ -372,25 +371,13 @@ def get_pdf_metadata(record_type, internal_id):
     A JSON structure containing the metadata, the name, and whether or not the
     method has associated spectra.
     """
-    if record_type.lower() == "fact sheet":
-        q = db.select(FactSheets.fact_sheet_name.label("pdf_name"), FactSheets.pdf_metadata).filter(FactSheets.internal_id==internal_id)
-    elif record_type.lower() == "method":
-        q = db.select(Methods.method_name.label("pdf_name"), Methods.pdf_metadata, Methods.has_associated_spectra).filter(Methods.internal_id==internal_id)
-    else:
-        return f"Error: invalid record type {record_type}."
-
-    data_row = db.session.execute(q).first()
-    if data_row is not None:
-        data_row = data_row._asdict()
-        return jsonify({
-            "pdf_name": data_row["pdf_name"],
-            "metadata_rows": data_row["pdf_metadata"],
-            "has_associated_spectra": data_row.get("has_associated_spectra", False)
-        })
+    
+    metadata = cq.pdf_metadata(internal_id, record_type.lower())
+    print(metadata)
+    if metadata is not None:
+        return jsonify(metadata)
     else:
         return f"Error: no PDF found for internal ID '{internal_id}'."
-
-
 
 
 @app.route("/find_dtxsids/<internal_id>")
@@ -542,7 +529,7 @@ def batch_search():
         # currently only spectra should be linkless, but this should be fixed to
         # be a more general case in the future, just in case
         if r["link"] is None:
-            records[i]["link"] = f"{base_url}/view_spectrum/{r['internal_id']}"
+            records[i]["link"] = f"{base_url}/view_mass_spectrum/{r['internal_id']}"
     record_df = pd.DataFrame(records)
 
     result_df = substance_df.merge(record_df, how="right", on="dtxsid")
@@ -590,16 +577,16 @@ def method_with_spectra_search(search_type, internal_id):
     return jsonify({"method_id": method_id, "spectrum_ids": spectrum_list, "info": info_entries})
 
 
-@app.route("/spectrum_count_by_type/", methods=["POST"])
-def get_spectrum_count_by_type():
+@app.route("/spectrum_count_for_methodology/", methods=["POST"])
+def get_spectrum_count_for_methodology():
     """
     Endpoint for getting a count of spectrum records that have the specified
-    spectrum type as one of its spectrum types.  (A few data sources can have
-    multiple spectrum types.)
+    methodology as one of its methodologies.  (A few data sources can have
+    multiple methodologies.)
 
     Note that parameters are currently handled by a POST rather than in the URL
     (like most of the other functions here) due to the fact that a lot of
-    spectrum types have forward slashes in them (e.g., 'LC/MS'), which disrupts
+    methodologies have forward slashes in them (e.g., 'LC/MS'), which disrupts
     Flask's routing.
 
     Currently intended for use with applications outside of the Vue app.
@@ -639,8 +626,8 @@ def count_substances_in_ids():
     return jsonify(dtxsid_count)
 
 
-@app.route("/spectrum_similarity_search/", methods=["POST"])
-def spectrum_similarity_search():
+@app.route("/mass_spectrum_similarity_search/", methods=["POST"])
+def mass_spectrum_similarity_search():
     """
     Takes a mass range, methodology, and mass spectrum, and returns all spectra
     that match the mass and methodology, with entropy similarities between the
@@ -652,7 +639,7 @@ def spectrum_similarity_search():
     methodology = request.json["methodology"]
     user_spectrum = request.json["spectrum"]
 
-    results = cq.spectrum_search(lower_mass_limit, upper_mass_limit, methodology)
+    results = cq.mass_spectrum_search(lower_mass_limit, upper_mass_limit, methodology)
 
     substance_mapping = {}
     for r in results:
@@ -697,7 +684,7 @@ def get_record_counts_by_dtxsid():
 @app.route("/max_similarity_by_dtxsid/", methods=["POST"])
 def max_similarity_by_dtxsid():
     """
-    This endpoint allows a user to submit a list of DTXSIDs and a spectrum.  In
+    This endpoint allows a user to submit a list of DTXSIDs and a mass spectrum.  In
     response, the user will get back the DTXSIDs mapped to similarity scores.
     The scores will be the highest similarity score computed on the user-
     supplied spectrum and all spectra in this database for that DTXSID.  If no
@@ -714,7 +701,7 @@ def max_similarity_by_dtxsid():
     da = request_json.get("da_window")
     ppm = request_json.get("ppm_window")
 
-    results = cq.get_spectra_for_substances(dtxsids)
+    results = cq.mass_spectra_for_substances(dtxsids)
 
     substance_dict = {d:None for d in dtxsids}
     for r in results:
@@ -737,7 +724,7 @@ def all_similarities_by_dtxsid():
     ppm = request_json.get("ppm_window")
     min_intensity = request_json.get("min_intensity", 0)
 
-    results = cq.get_spectra_for_substances(dtxsids, [SpectrumData.spectrum_metadata])
+    results = cq.mass_spectra_for_substances(dtxsids, [MassSpectra.spectrum_metadata])
 
     # mass query
     q = db.select(Substances.dtxsid, Substances.monoisotopic_mass).filter(Substances.dtxsid.in_(dtxsids))
@@ -777,27 +764,20 @@ def get_info_by_id(internal_id):
 
 @app.route("/database_summary/")
 def database_summary():
-    q_types = db.select(RecordInfo.record_type, RecordInfo.data_type, func.count(RecordInfo.internal_id)).group_by(RecordInfo.record_type, RecordInfo.data_type)
-    type_dict = defaultdict(dict)
-    for r in db.session.execute(q_types).all():
-        r = r._asdict()
-        type_dict[r["record_type"]][r["data_type"] if r["data_type"] else "None"] = r["count"]
-
-    q_sources = db.select(func.count(func.distinct(RecordInfo.source)))
-    unique_sources = db.session.execute(q_sources).all()[0][0]
-
-    q_substances = db.select(func.count(func.distinct(Contents.dtxsid)))
-    unique_substances = db.session.execute(q_substances).all()[0][0]
-    return jsonify({"result":"success", "substances_appearing": unique_substances, "source_count": unique_sources, "result_types": type_dict})
+    summary_info = cq.database_summary()
+    summary_dict = defaultdict(lambda: defaultdict(dict))
+    for row in summary_info:
+        summary_dict[row["count_type"]][row["subtype"]] = row["value_count"]
+    return jsonify({k: dict(v) for k,v in summary_dict.items()})
 
 
-@app.route("/spectra_for_substances/", methods=["POST"])
-def spectra_for_substances():
+@app.route("/mass_spectra_for_substances/", methods=["POST"])
+def mass_spectra_for_substances():
     """
     Given a list of DTXSIDs, return all spectra for those substances.
     """
     dtxsids = request.get_json()["dtxsids"]
-    spectrum_results = cq.get_spectra_for_substances(dtxsids)
+    spectrum_results = cq.mass_spectra_for_substances(dtxsids)
     names_for_dtxsids = cq.names_for_dtxsids(dtxsids)
     return jsonify({"spectra":spectrum_results, "substance_mapping": names_for_dtxsids})
 
@@ -924,6 +904,13 @@ def analytical_qc_list():
     )
     results = [c._asdict() for c in db.session.execute(q).all()]
     return jsonify({"results": results})
+
+
+@app.route("/additional_sources_for_substance/<dtxsid>")
+def additional_sources_for_substance(dtxsid):
+    sources = cq.additional_sources_by_substance(dtxsid)
+    return jsonify(sources)
+
 
 
 

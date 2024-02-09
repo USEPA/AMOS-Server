@@ -34,12 +34,12 @@ This table covers general info that is associated with every kind of record in t
 - experimental: Boolean indicating whether the record is the result of experimental data (true) or not (false).  At the moment, this is expected to always be true, as the focus of the project is experimental records.
 - external_use_allowed: Whether the record will be displayable outside the EPA.  Currently not used by the app.
 - description: A description of the data in the record.  The exact contents of this string vary a lot, but generally, this field covers experimental parameters for spectra and summaries or abstracts for fact sheets and methods.
-- data_type: Indicates what kind of data this record is associated with.  Currently should be either "spectrum" or "PDF".
+- data_type: Indicates what kind of data this record is associated with.  Current values include "PDF", "Mass Spectrum", and null (for external records not stored in the database).
 - record_type: The kind of record that this entry represents -- either a spectrum, a fact sheet, or a method.
 
 
-SPECTRUM DATA
-This table stores information specific to mass spectra whose spectra are stored directly in the database (so, for instance, Spectrabase doesn't supply the actual spectra in its data dump, so it has no rows in this table).
+MASS SPECTRA
+This table stores information specific to mass spectra whose spectra are stored directly in the database (so sources that we can only link to, such as SpectraBase, won't have rows in this table).
 - internal_id: Same as above.
 - splash: Spectral Hash Identifier.  See https://splash.fiehnlab.ucdavis.edu/ for more information.
 - spectrum: The spectrum, formatted as two-dimensional array describing a list of charge-to-mass ratios and intensities.
@@ -117,3 +117,18 @@ This table stores a collection of spectra-containing PDFs that are from the Anal
 - pubchem_sid: PubChem ID for the substance.
 - bottle_barcode: Barcode for the sample bottle.
 - annotation: Additional annotation for the experiment.
+
+
+DATABASE SUMMARY
+This table holds precalculated values regarding the contents of the database for use on the About page.  This table was put together to avoid having to recalculate these values from scratch every time the page is loaded, at the cost of needing to update these values whenever records are added to or removed from the database.  As a result, the contents of this table are a bit more haphazard than in other tables.
+- count_type: Part of the description of what's being counted in this row.  Usually either a record type, substance count, or source count.
+- subtype: The other part of the description.
+- value_count: The count of whatever's being described in the row.
+
+
+ADDITIONAL SOURCES
+This table contains links to other sources on a per-substance basis.  Since AMOS's focus is somewhat specialized, these can allow easy access to other information beyond AMOS's immediate scope.
+- dtxsid: The substance the source covers.
+- source_name: Name of the source, which is used for the hyperlink's text.
+- link: The URL to the additional source.
+- description: A field for potential hovertext, if needed.  Currently unused.
