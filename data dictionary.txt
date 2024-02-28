@@ -117,6 +117,7 @@ This table stores a collection of spectra-containing PDFs that are from the Anal
 - pubchem_sid: PubChem ID for the substance.
 - bottle_barcode: Barcode for the sample bottle.
 - annotation: Additional annotation for the experiment.
+- sample_id: ID for sample.  Based on the Tox21 ID, or the bottle barcode if it's missing.
 
 
 DATABASE SUMMARY
@@ -132,3 +133,18 @@ This table contains links to other sources on a per-substance basis.  Since AMOS
 - source_name: Name of the source, which is used for the hyperlink's text.
 - link: The URL to the additional source.
 - description: A field for potential hovertext, if needed.  Currently unused.
+
+
+NMR SPECTRA
+This table holds one-dimensional NMR spectra, along with some associated information.  This table may be subject to change, as work on NMR spectra has not been going on very long.
+- internal_id: Same as elsewhere.
+- frequency: Frequency of the spectrometer in megahertz.
+- nucleus: The nucleus being observed during the experiment.
+- solvent: Solvent that the sample is dissolved/suspended in.
+- temperature: The ambient temperature during the experiment in Celsius.
+- coupling_constants: A JSON structure containing information on the coupling constants.  Currently not defined.
+- first_x: Starting value on the horizontal axis.
+- last_x: Ending value on the horizontal axis.
+- x_units: Units on the horizontal axis.  I believe we're hoping to standardize on ppm, so this may go away in the future.
+- intensities: One-dimensional array containing the intensities.  The length of the array is also used to interpolate the values on the horizontal axis.
+- spectrum_metadata: JSON structure containing additional data of interest for the spectrum.

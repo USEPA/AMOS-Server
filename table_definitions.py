@@ -145,6 +145,7 @@ class AnalyticalQC(db.Model):
     pubchem_sid = db.Column(db.TEXT)
     bottle_barcode = db.Column(db.TEXT)
     annotation = db.Column(db.TEXT)
+    sample_id = db.Column(db.TEXT)
 
 
 class DatabaseSummary(db.Model):
@@ -173,3 +174,19 @@ class AdditionalSources(db.Model):
             "dtxsid": self.dtxsid, "source_name": self.source_name, 
             "link": self.link, "description": self.description
         }
+
+
+class NMRSpectra(db.Model):
+    __tablename__ = "nmr_spectra"
+    __table_args__ = {'schema': 'amos'}
+    internal_id = db.Column(db.TEXT, primary_key=True)
+    frequency = db.Column(db.REAL)
+    nucleus = db.Column(db.VARCHAR(16))
+    solvent = db.Column(db.TEXT)
+    temperature = db.Column(db.REAL)
+    coupling_constants = db.Column(db.JSON)
+    first_x = db.Column(db.REAL)
+    last_x = db.Column(db.REAL)
+    x_units = db.Column(db.VARCHAR(16))
+    intensities = db.Column(ARRAY(db.REAL, dimensions=1))
+    spectrum_metadata = db.Column(db.JSON)

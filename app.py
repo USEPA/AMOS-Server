@@ -12,7 +12,7 @@ from sqlalchemy import func
 import common_queries as cq
 import spectrum
 from table_definitions import db, AnalyticalQC, Contents, FactSheets, \
-    Methods, MethodsWithSpectra, RecordInfo, MassSpectra, \
+    Methods, MethodsWithSpectra, RecordInfo, MassSpectra, NMRSpectra, \
     SubstanceImages, Substances, SpectrumPDFs, Synonyms
 import util
 import sentry_sdk
@@ -521,6 +521,9 @@ def batch_search():
             Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
         )
     records = [c._asdict() for c in db.session.execute(record_query).all()]
+    if len(records) == 0:
+        return Response(status=204)
+
     if not include_spectrabase:
         # don't add this as a filter to the query; it'll miss records without sources if it's added there
         records = [r for r in records if r["source"] != "SpectraBase"]
@@ -896,7 +899,7 @@ def analytical_qc_list():
     q = db.select(
         Contents.internal_id, Contents.dtxsid, Substances.preferred_name, Substances.casrn,
         AnalyticalQC.experiment_date, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint,
-        AnalyticalQC.stability_call, AnalyticalQC.annotation
+        AnalyticalQC.stability_call, AnalyticalQC.annotation, AnalyticalQC.study, AnalyticalQC.sample_id
     ).join_from(
         AnalyticalQC, Contents, AnalyticalQC.internal_id == Contents.internal_id
     ).join_from(
@@ -911,6 +914,32 @@ def additional_sources_for_substance(dtxsid):
     sources = cq.additional_sources_by_substance(dtxsid)
     return jsonify(sources)
 
+
+@app.route("/get_nmr_spectrum/<internal_id>")
+def retrieve_nmr_spectrum(internal_id):
+    """
+    Endpoint for retrieving a specified NMR spectrum from the database.
+
+    Parameters
+    ----------
+    internal_id : string
+        The unique internal identifier for the spectrum that's being looked for.
+
+    Returns
+    -------
+    A JSON structure containing the information about the spectrum.
+    """
+    q = db.select(
+            NMRSpectra.intensities, NMRSpectra.first_x, NMRSpectra.last_x, NMRSpectra.x_units,
+            NMRSpectra.frequency, NMRSpectra.nucleus, NMRSpectra.temperature, NMRSpectra.solvent
+        ).filter(NMRSpectra.internal_id==internal_id)
+    data_row = db.session.execute(q).first()
+    if data_row is not None:
+        data_dict = data_row._asdict()
+        return jsonify(data_dict)
+
+    else:
+        return "Error: invalid internal id."
 
 
 
