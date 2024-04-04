@@ -344,7 +344,7 @@ def get_pdf(record_type, internal_id):
     if pdf_content:
         response = make_response(pdf_content)
         response.headers['Content-Type'] = "application/pdf"
-        response.headers['Content-Disposition'] = f"inline; filename=\"{internal_id}\""
+        response.headers['Content-Disposition'] = f"inline; filename=\"{internal_id}.pdf\""
         return response
     else:
         return f"Error: no PDF found for internal ID '{internal_id}'."
