@@ -15,6 +15,7 @@ from table_definitions import db, AnalyticalQC, Contents, FactSheets, \
     Methods, MethodsWithSpectra, RecordInfo, MassSpectra, NMRSpectra, \
     SubstanceImages, Substances, SpectrumPDFs, Synonyms
 import util
+
 import sentry_sdk
 from sentry_sdk.integrations.flask import FlaskIntegration
 
@@ -298,7 +299,7 @@ def method_list():
     q = db.select(
         Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix, Methods.analyte,
         Methods.chemical_class, Methods.pdf_metadata, RecordInfo.source, RecordInfo.methodologies, RecordInfo.description,
-        Methods.document_type, Methods.publisher, func.count(Contents.dtxsid)
+        RecordInfo.link, Methods.document_type, Methods.publisher, func.count(Contents.dtxsid)
     ).join_from(
         Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id
     ).join_from(
@@ -699,18 +700,32 @@ def max_similarity_by_dtxsid():
     dtxsids = request_json["dtxsids"]
     if type(dtxsids) == str:
         dtxsids = [dtxsids]
-    user_spectrum = request_json["spectrum"]
+    user_spectra = request_json["spectra"]
+    for i, us in enumerate(user_spectra):
+        try:
+            spectrum.validate_spectrum(us)
+        except ValueError as ve:
+            return jsonify({"error": f"User-supplied spectrum number {i+1} is invalid: {ve}"})
 
     da = request_json.get("da_window")
     ppm = request_json.get("ppm_window")
 
+    # get the list of spectra in the database for the given substances
     results = cq.mass_spectra_for_substances(dtxsids)
 
-    substance_dict = {d:None for d in dtxsids}
+    """substance_dict = {d:None for d in dtxsids}
     for r in results:
         similarity = spectrum.calculate_entropy_similarity(user_spectrum, r["spectrum"], da_error=da, ppm_error=ppm)
         if substance_dict[r["dtxsid"]] is None or substance_dict[r["dtxsid"]] < similarity:
-            substance_dict[r["dtxsid"]] = similarity
+            substance_dict[r["dtxsid"]] = similarity"""
+    
+    substance_dict = {d: [None]*len(user_spectra) for d in dtxsids}
+    for i, us in enumerate(user_spectra):
+        for r in results:
+            similarity = spectrum.calculate_entropy_similarity(us, r["spectrum"], da_error=da, ppm_error=ppm)
+            if substance_dict[r["dtxsid"]][i] is None or substance_dict[r["dtxsid"]][i] < similarity:
+                substance_dict[r["dtxsid"]][i] = similarity
+        
 
     return jsonify({"results":substance_dict})
 
@@ -723,6 +738,12 @@ def all_similarities_by_dtxsid():
         dtxsids = [dtxsids]
     user_spectrum = request_json["spectrum"]
 
+    # quick spectrum validation check
+    try:
+        spectrum.validate_spectrum(user_spectrum)
+    except ValueError as ve:
+        return jsonify({"error": f"User-supplied spectrum is invalid: {ve}"})
+
     da = request_json.get("da_window")
     ppm = request_json.get("ppm_window")
     min_intensity = request_json.get("min_intensity", 0)
@@ -732,10 +753,11 @@ def all_similarities_by_dtxsid():
     # mass query
     q = db.select(Substances.dtxsid, Substances.monoisotopic_mass).filter(Substances.dtxsid.in_(dtxsids))
     mass_results = [c._asdict() for c in db.session.execute(q).all()]
+    mass_dict = {mr["dtxsid"]: mr["monoisotopic_mass"] for mr in mass_results}
 
     substance_dict = {d:[] for d in dtxsids}
-    mass_dict = {mr["dtxsid"]: mr["monoisotopic_mass"] for mr in mass_results}
     for r in results:
+        # filter out peaks above the monoisotopic mass (minus a proton or so) and peaks below a certain intensity
         result_spectrum = [[mz, i] for mz, i in r["spectrum"] if (mz < (mass_dict[r["dtxsid"]]-1.5)) and (i > min_intensity)]
         if len(result_spectrum) == 0:
             continue
@@ -896,6 +918,9 @@ def get_substance_file_for_record(internal_id):
 
 @app.route("/analytical_qc_list/")
 def analytical_qc_list():
+    """
+    Retrieves information on all of the AnalyticalQC PDFs in the database.
+    """
     q = db.select(
         Contents.internal_id, Contents.dtxsid, Substances.preferred_name, Substances.casrn,
         AnalyticalQC.experiment_date, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint,
@@ -911,6 +936,10 @@ def analytical_qc_list():
 
 @app.route("/additional_sources_for_substance/<dtxsid>")
 def additional_sources_for_substance(dtxsid):
+    """
+    Retrieves links for supplemental sources (e.g., Wikipedia, ChemExpo) for a
+    given DTXSID.
+    """
     sources = cq.additional_sources_by_substance(dtxsid)
     return jsonify(sources)
 
@@ -940,6 +969,15 @@ def retrieve_nmr_spectrum(internal_id):
 
     else:
         return "Error: invalid internal id."
+
+
+@app.route("/get_classification_for_dtxsid/<dtxsid>")
+def get_classification_for_dtxsid(dtxsid):
+    classification_info = cq.classyfire_for_dtxsid(dtxsid)
+    if classification_info is not None:
+        return jsonify(classification_info)
+    else:
+        return Response(status=204)
 
 
 

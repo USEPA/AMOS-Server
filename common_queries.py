@@ -2,18 +2,39 @@ from collections import defaultdict
 
 from sqlalchemy import func
 
-from table_definitions import db, AdditionalSources, AnalyticalQC, Contents, \
-    DatabaseSummary, FactSheets, MassSpectra, Methods, MethodsWithSpectra, \
-    RecordInfo, SpectrumPDFs, SubstanceImages, Substances,  Synonyms
+from table_definitions import db, AdditionalSources, AnalyticalQC, ClassyFire, \
+    Contents, DatabaseSummary, FactSheets, MassSpectra, Methods, \
+    MethodsWithSpectra, RecordInfo, SpectrumPDFs, SubstanceImages, Substances, \
+    Synonyms
 
 
 
 def additional_sources_by_substance(dtxsid):
     """
-    Retrieves links to any additional sources for the given DTXSID.
+    Retrieves links for supplemental sources (e.g., Wikipedia, ChemExpo) for a
+    given DTXSID.
     """
     query = db.select(AdditionalSources).filter(AdditionalSources.dtxsid == dtxsid)
     return [c[0].get_row_contents() for c in db.session.execute(query).all()]
+
+
+def classyfire_for_dtxsid(dtxsid, full_info=False):
+    """
+    Retrieves ClassyFire's classification info a given DTXSID.  By default this
+    will only return the actual classification of the substance (kingdom,
+    superclass, class, subclass), but all information can be returned by setting
+    full_info to True.
+    """
+    search_fields = [ClassyFire.kingdom, ClassyFire.superklass, ClassyFire.klass, ClassyFire.subklass]
+    if full_info:
+        search_fields.extend([ClassyFire.direct_parent, ClassyFire.geometric_descriptor, ClassyFire.alternative_parents, ClassyFire.substituents])
+    query = db.select(*search_fields).filter(ClassyFire.dtxsid == dtxsid)
+    data_row = db.session.execute(query).first()
+    if data_row is not None:
+        return data_row._asdict()
+    else:
+        return None
+
 
 
 def database_summary():

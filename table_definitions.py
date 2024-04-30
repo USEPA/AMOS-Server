@@ -190,3 +190,17 @@ class NMRSpectra(db.Model):
     x_units = db.Column(db.VARCHAR(16))
     intensities = db.Column(ARRAY(db.REAL, dimensions=1))
     spectrum_metadata = db.Column(db.JSON)
+
+
+class ClassyFire(db.Model):
+    __tablename__ = "classyfire"
+    __table_args__ = {'schema': 'amos'}
+    dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
+    kingdom = db.Column(db.TEXT)
+    superklass = db.Column(db.TEXT)
+    klass = db.Column(db.TEXT)
+    subklass = db.Column(db.TEXT)
+    direct_parent = db.Column(db.TEXT)
+    geometric_descriptor = db.Column(db.TEXT)
+    alternative_parents = db.Column(ARRAY(db.TEXT, dimensions=1))
+    substituents = db.Column(ARRAY(db.TEXT, dimensions=1))

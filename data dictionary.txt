@@ -148,3 +148,16 @@ This table holds one-dimensional NMR spectra, along with some associated informa
 - x_units: Units on the horizontal axis.  I believe we're hoping to standardize on ppm, so this may go away in the future.
 - intensities: One-dimensional array containing the intensities.  The length of the array is also used to interpolate the values on the horizontal axis.
 - spectrum_metadata: JSON structure containing additional data of interest for the spectrum.
+
+
+CLASSYFIRE
+This table contains a copy of ClassyFire, which defines classifications for substances.  Note that the spelling "klass" is used instead of "class" to avoid keyword issues in the programming.
+- dtxsid: Same as elsewhere.
+- kingdom: Highest-level classification; should only be "organic compounds" or "inorganic compounds".
+- superklass: Second-highest level of classification; more refined than kingdoms but more structure-specific.
+- klass: Third-highest level of classification; much more structure-specific classifications.
+- subklass: Fourth-highest level of classification.
+- direct_parent: Category defined by the largest structural feature of the compound.
+- geometric_descriptor: Structure-based category for the substance.
+- alternative_parents: Additional categories that are valid descriptions of the substance.
+- substituents: Structural features in the substance that can be substituted.

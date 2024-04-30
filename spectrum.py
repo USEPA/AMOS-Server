@@ -153,7 +153,7 @@ def normalize_spectrum(spectrum):
 
 def validate_spectrum(spectrum):
     if type(spectrum) is not list:
-        raise ValueError("Spectrum format is incorrect -- submitted value is not a list")
+        raise ValueError("Spectrum format is incorrect -- submitted value is not a list.")
     if not all((type(x) is tuple or type(x) is list) for x in spectrum):
         raise ValueError("Spectrum format is incorrect -- at least one element in the list of peaks is not itself a list.")
     if not all(len(x) == 2 for x in spectrum):
