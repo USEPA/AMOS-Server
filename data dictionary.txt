@@ -84,6 +84,7 @@ This table contains information specific to methods stored in the database, as w
 - has_associated_spectra: A boolean indicating whether there are any spectra associated with this method.
 - document_type: A shorthand for the type of document.  Usually an abbreviation.
 - publisher: Name of the organization that published the method.
+- mmdb_matrix: Name of the MMDB category that maps to our curated matrix assignment.
 
 
 METHODS WITH SPECTRA
@@ -118,6 +119,7 @@ This table stores a collection of spectra-containing PDFs that are from the Anal
 - bottle_barcode: Barcode for the sample bottle.
 - annotation: Additional annotation for the experiment.
 - sample_id: ID for sample.  Based on the Tox21 ID, or the bottle barcode if it's missing.
+- flags: Semicolon-delimited list of flags associated with a record's substance.
 
 
 DATABASE SUMMARY

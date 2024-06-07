@@ -109,6 +109,7 @@ class Methods(db.Model):
     has_associated_spectra = db.Column(db.BOOLEAN)
     document_type = db.Column(db.TEXT)
     publisher = db.Column(db.TEXT)
+    mmdb_matrix = db.Column(db.TEXT)
 
 
 class MethodsWithSpectra(db.Model):
@@ -146,6 +147,7 @@ class AnalyticalQC(db.Model):
     bottle_barcode = db.Column(db.TEXT)
     annotation = db.Column(db.TEXT)
     sample_id = db.Column(db.TEXT)
+    flags = db.Column(db.TEXT)
 
 
 class DatabaseSummary(db.Model):

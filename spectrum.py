@@ -151,6 +151,19 @@ def normalize_spectrum(spectrum):
     return normalized_spectrum
 
 
+def spectrum_rating(spectral_entropy, normalized_entropy):
+    """
+    Convenience function for getting the MoNA-style rating of a spectrum based
+    on its entropies.
+    """
+    if (spectral_entropy is None) or (normalized_entropy is None):
+        return "N/A"
+    elif (spectral_entropy > 3.0) or (normalized_entropy > 0.8):
+        return "Noisy"
+    else:
+        return "Clean"
+
+
 def validate_spectrum(spectrum):
     if type(spectrum) is not list:
         raise ValueError("Spectrum format is incorrect -- submitted value is not a list.")

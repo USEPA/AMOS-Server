@@ -67,11 +67,10 @@ def mass_spectrum_search(lower_mass_limit, upper_mass_limit, methodology=None):
     """
     Retrieves basic information on a set of spectra from the database,
     constrained by a mass range and an analytical methodology.
-
-    TODO: change filter from data_type == "Spectrum" to "Mass Spectrum"
     """
     q = db.select(
-            Substances.dtxsid, Substances.preferred_name, Contents.internal_id, RecordInfo.description, MassSpectra.spectrum, MassSpectra.spectrum_metadata
+            Substances.dtxsid, Substances.preferred_name, Contents.internal_id, RecordInfo.description, RecordInfo.source, RecordInfo.link,
+            MassSpectra.spectrum, MassSpectra.spectrum_metadata
         ).filter(
             Substances.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Mass Spectrum")
         ).join_from(

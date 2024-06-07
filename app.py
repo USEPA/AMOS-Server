@@ -7,11 +7,11 @@ from flask import Flask, jsonify, make_response, request, Response
 from flask_cors import CORS
 import pandas as pd
 import requests
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 import common_queries as cq
 import spectrum
-from table_definitions import db, AnalyticalQC, Contents, FactSheets, \
+from table_definitions import db, AnalyticalQC, ClassyFire, Contents, FactSheets, \
     Methods, MethodsWithSpectra, RecordInfo, MassSpectra, NMRSpectra, \
     SubstanceImages, Substances, SpectrumPDFs, Synonyms
 import util
@@ -192,10 +192,20 @@ def search_results(dtxsid):
     method_number_query = db.select(Methods.internal_id, Methods.method_number, Methods.document_type).filter(Methods.internal_id.in_(internal_ids))
     method_info = [r._asdict() for r in db.session.execute(method_number_query)]
     method_info = {mn["internal_id"]: {"method_number": mn["method_number"], "document_type": mn["document_type"]} for mn in method_info}
+
+    spectrum_data_query = db.select(MassSpectra.internal_id, MassSpectra.spectral_entropy, MassSpectra.normalized_entropy).filter(MassSpectra.internal_id.in_(internal_ids))
+    spectrum_info = [r._asdict() for r in db.session.execute(spectrum_data_query)]
+    spectrum_info = {si["internal_id"]: {"spectral_entropy": si["spectral_entropy"], "normalized_entropy": si["normalized_entropy"]} for si in spectrum_info}
+
     for r in records:
         if r["internal_id"] in method_info:
             r["method_number"] = method_info[r["internal_id"]]["method_number"]
             r["method_type"] = method_info[r["internal_id"]]["document_type"]
+        if r["internal_id"] in spectrum_info:
+            r["spectrum_rating"] = spectrum.spectrum_rating(
+                spectrum_info[r["internal_id"]]["spectral_entropy"],
+                spectrum_info[r["internal_id"]]["normalized_entropy"]
+            )
 
     result_record_types = [r["record_type"] for r in records]
     record_type_counts = Counter(result_record_types)
@@ -374,7 +384,6 @@ def get_pdf_metadata(record_type, internal_id):
     """
     
     metadata = cq.pdf_metadata(internal_id, record_type.lower())
-    print(metadata)
     if metadata is not None:
         return jsonify(metadata)
     else:
@@ -508,19 +517,31 @@ def batch_search():
     The POST should contain a list of DTXSIDs in a corresponding "dtxsids"
     element, but no other parameters are required.
     """
-    dtxsid_list = request.get_json()["dtxsids"]
-    base_url = request.get_json()["base_url"]
-    include_spectrabase = request.get_json()["include_spectrabase"]
+    parameters = request.get_json()
+    dtxsid_list = parameters["dtxsids"]
+    base_url = parameters["base_url"]
+    include_spectrabase = parameters["include_spectrabase"]
+    record_types = parameters["record_types"]
+    methodologies = parameters["methodologies"]
 
     substance_query = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsid_list))
     substances = [c._asdict() for c in db.session.execute(substance_query).all()]
     substance_df = pd.DataFrame(substances)
 
     record_query = db.select(
-            Contents.internal_id, Contents.dtxsid, RecordInfo.methodologies, RecordInfo.source, RecordInfo.link, RecordInfo.record_type, RecordInfo.description
-        ).filter(Contents.dtxsid.in_(dtxsid_list)).join_from(
+            Contents.internal_id, Contents.dtxsid, RecordInfo.methodologies, RecordInfo.source, RecordInfo.link, RecordInfo.record_type,
+            RecordInfo.description, RecordInfo.data_type
+        ).join_from(
             Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
-        )
+        ).filter(Contents.dtxsid.in_(dtxsid_list))
+    
+    if not methodologies["all"]:
+        accepted_methodologies = [k for k,v in methodologies.items() if (k != "all") and v]
+        record_query = record_query.filter(or_(*[RecordInfo.methodologies.contains([am]) for am in accepted_methodologies]))
+    
+    accepted_record_types = [k for k,v in record_types.items() if (k != "all") and v]
+    record_query = record_query.filter(RecordInfo.record_type.in_(accepted_record_types))
+
     records = [c._asdict() for c in db.session.execute(record_query).all()]
     if len(records) == 0:
         return Response(status=204)
@@ -533,8 +554,20 @@ def batch_search():
         # currently only spectra should be linkless, but this should be fixed to
         # be a more general case in the future, just in case
         if r["link"] is None:
-            records[i]["link"] = f"{base_url}/view_mass_spectrum/{r['internal_id']}"
+            if r["record_type"] == "Spectrum":
+                if r["data_type"] == "Mass Spectrum":
+                    records[i]["link"] = f"{base_url}/view_mass_spectrum/{r['internal_id']}"
+                elif r["data_type"] == "PDF":
+                    records[i]["link"] = f"{base_url}/view_spectrum_pdf/{r['internal_id']}"
+                elif r["data_type"] == "NMR Spectrum":
+                    pass  # add this case once a dedicated page has been set up
+            elif r["record_type"] == "Fact Sheet":
+                records[i]["link"] = f"{base_url}/view_fact_sheet/{r['internal_id']}"
+            elif r["record_type"] == "Method":
+                records[i]["link"] = f"{base_url}/view_method/{r['internal_id']}"
     record_df = pd.DataFrame(records)
+    record_df.drop("data_type", axis=1, inplace=True)
+    record_df["methodologies"] = record_df["methodologies"].apply(lambda x: "; ".join(x))
 
     result_df = substance_df.merge(record_df, how="right", on="dtxsid")
 
@@ -769,7 +802,7 @@ def all_similarities_by_dtxsid():
         spectral_entropy = spectrum.calculate_spectral_entropy(combined_spectrum)
         normalized_entropy = spectral_entropy/len(combined_spectrum)
         information = {"Points": len(result_spectrum), "Spectral Entropy": spectral_entropy, "Normalized Entropy": normalized_entropy,
-                       "Rating": "Clean" if spectral_entropy <= 3.0 and normalized_entropy <= 0.8 else "Noisy"}
+                       "Rating": spectrum.spectrum_rating(spectral_entropy, normalized_entropy)}
         entropy_similarity = spectrum.calculate_entropy_similarity(user_spectrum, combined_spectrum, da_error=da, ppm_error=ppm)
         cosine_similarity = spectrum.cosine_similarity(user_spectrum, combined_spectrum)
         substance_dict[r["dtxsid"]].append({"entropy_similarity": entropy_similarity, "cosine_similarity": cosine_similarity, "description": description, "metadata": r["spectrum_metadata"], "information": information})
@@ -922,9 +955,10 @@ def analytical_qc_list():
     Retrieves information on all of the AnalyticalQC PDFs in the database.
     """
     q = db.select(
-        Contents.internal_id, Contents.dtxsid, Substances.preferred_name, Substances.casrn,
+        Contents.internal_id, Contents.dtxsid, Substances.preferred_name, Substances.casrn, Substances.molecular_formula,
         AnalyticalQC.experiment_date, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint,
-        AnalyticalQC.stability_call, AnalyticalQC.annotation, AnalyticalQC.study, AnalyticalQC.sample_id
+        AnalyticalQC.stability_call, AnalyticalQC.annotation, AnalyticalQC.study, AnalyticalQC.sample_id,
+        AnalyticalQC.flags
     ).join_from(
         AnalyticalQC, Contents, AnalyticalQC.internal_id == Contents.internal_id
     ).join_from(
@@ -980,6 +1014,52 @@ def get_classification_for_dtxsid(dtxsid):
         return Response(status=204)
 
 
+@app.route("/substances_for_classification/", methods=["POST"])
+def substances_for_classification():
+    request_json = request.get_json()
+    kingdom, superklass, klass, subklass =  request_json.get("kingdom"), request_json.get("superklass"), request_json.get("klass"), request_json.get("subklass")
+    query = db.select(
+            ClassyFire.dtxsid, Substances.casrn, Substances.preferred_name, Substances.monoisotopic_mass, Substances.molecular_formula
+        ).join_from(ClassyFire, Substances, ClassyFire.dtxsid==Substances.dtxsid).filter(
+            (ClassyFire.kingdom==kingdom) & (ClassyFire.superklass==superklass) & (ClassyFire.klass==klass) & (ClassyFire.subklass==subklass)
+        )
+    substances = [c._asdict() for c in db.session.execute(query).all()]
+    dtxsids = [s["dtxsid"] for s in substances]
+
+    record_counts = cq.record_counts_by_dtxsid(dtxsids)
+    for s in substances:
+        records = record_counts[s["dtxsid"]]
+        num_records = records.get("Method", 0) + records.get("Fact Sheet", 0) + records.get("Spectrum", 0)
+        s["count"] = num_records
+
+    return jsonify({"substances": substances})
+
+
+@app.route("/next_level_classification/", methods=["POST"])
+def next_level_classification():
+    request_json = request.get_json()
+    kingdom, superklass, klass =  request_json.get("kingdom"), request_json.get("superklass"), request_json.get("klass")
+    
+    if kingdom is not None:
+        if superklass is not None:
+            if klass is not None:
+                query = db.select(ClassyFire.subklass).filter(
+                    (ClassyFire.kingdom==kingdom) & (ClassyFire.superklass==superklass) & (ClassyFire.klass==klass)
+                ).distinct().order_by(ClassyFire.subklass)
+            else:
+                query = db.select(ClassyFire.klass).filter(
+                    (ClassyFire.kingdom==kingdom) & (ClassyFire.superklass==superklass)
+                ).distinct(ClassyFire.klass)
+        else:
+            query = db.select(ClassyFire.superklass).filter(ClassyFire.kingdom==kingdom).distinct().order_by(ClassyFire.superklass)
+    else:
+        return jsonify({"error": "Somehow, no kingdom was passed."})
+    
+    possible_values = [r[0] for r in db.session.execute(query)]
+    return jsonify({"values": possible_values})
+    
+
+    
 
 if __name__ == "__main__":
     db.init_app(app)
