@@ -11,6 +11,7 @@ This table stores information about the substances that are searchable in this d
 - preferred_name: Name of the substance.  These are standardized to the EPA's preferred names as much as possible.
 - molecular_formula: Molecular formula of the substance.
 - molecular_weight: Weight of the substance, in Daltons.
+- image_in_comptox: Flag used for whether CompTox's API has an image of the substance.  True if it does, false if it doesn't but there is one in DSSTox, and null if there's no image at all to be found.
 
 
 SYNONYMS

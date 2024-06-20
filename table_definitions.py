@@ -16,12 +16,14 @@ class Substances(db.Model):
     preferred_name = db.Column(db.TEXT)
     molecular_formula = db.Column(db.TEXT)
     monoisotopic_mass = db.Column(db.REAL)
+    image_in_comptox = db.Column(db.BOOLEAN)
 
     def get_row_contents(self):
         return {
-            "dtxsid":self.dtxsid, "casrn":self.casrn, "jchem_inchikey":self.jchem_inchikey,
-            "indigo_inchikey":self.indigo_inchikey, "preferred_name":self.preferred_name, 
-            "molecular_formula":self.molecular_formula, "monoisotopic_mass":self.monoisotopic_mass
+            "dtxsid": self.dtxsid, "dtxcid": self.dtxcid, "casrn": self.casrn,
+            "jchem_inchikey": self.jchem_inchikey, "indigo_inchikey":self.indigo_inchikey,
+            "preferred_name":self.preferred_name, "molecular_formula":self.molecular_formula,
+            "monoisotopic_mass":self.monoisotopic_mass, "image_in_comptox": self.image_in_comptox
         }
     
 class Synonyms(db.Model):

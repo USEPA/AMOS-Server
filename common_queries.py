@@ -45,6 +45,17 @@ def database_summary():
     return [c[0].get_row_contents() for c in db.session.execute(query).all()]
 
 
+def ids_for_substances(dtxsids, record_type=None, additional_fields=[]):
+    """
+    Retrieves a list of record IDs that contain a given set of substances.
+    """
+    query = db.select(Contents.internal_id, *additional_fields).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id).filter(Contents.dtxsid.in_(dtxsids)).distinct()
+    if record_type is not None:
+        query = query.filter(RecordInfo.record_type==record_type)
+    results = [c._asdict() for c in db.session.execute(query).all()]
+    return results
+    
+
 def mass_spectra_for_substances(dtxsid_list, additional_fields=[]):
     """
     Takes a list of DTXSIDs and returns all mass spectra associated with those
@@ -53,14 +64,14 @@ def mass_spectra_for_substances(dtxsid_list, additional_fields=[]):
 
     TODO: change filter from data_type == "Spectrum" to "Mass Spectrum"
     """
-    q = db.select(Contents.dtxsid, RecordInfo.internal_id, RecordInfo.description, MassSpectra.spectrum, *additional_fields).filter(
+    query = db.select(Contents.dtxsid, RecordInfo.internal_id, RecordInfo.description, MassSpectra.spectrum, *additional_fields).filter(
         (Contents.dtxsid.in_(dtxsid_list)) & (RecordInfo.data_type == "Mass Spectrum")
     ).join_from(
         Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
     ).join_from(
         Contents, MassSpectra, Contents.internal_id==MassSpectra.internal_id
     )
-    return [c._asdict() for c in db.session.execute(q).all()]
+    return [c._asdict() for c in db.session.execute(query).all()]
 
 
 def mass_spectrum_search(lower_mass_limit, upper_mass_limit, methodology=None):
@@ -68,7 +79,7 @@ def mass_spectrum_search(lower_mass_limit, upper_mass_limit, methodology=None):
     Retrieves basic information on a set of spectra from the database,
     constrained by a mass range and an analytical methodology.
     """
-    q = db.select(
+    query = db.select(
             Substances.dtxsid, Substances.preferred_name, Contents.internal_id, RecordInfo.description, RecordInfo.source, RecordInfo.link,
             MassSpectra.spectrum, MassSpectra.spectrum_metadata
         ).filter(
@@ -81,8 +92,8 @@ def mass_spectrum_search(lower_mass_limit, upper_mass_limit, methodology=None):
             Contents, MassSpectra, Contents.internal_id==MassSpectra.internal_id
         )
     if methodology:
-        q = q.filter(RecordInfo.methodologies.any(methodology))
-    results = [c._asdict() for c in db.session.execute(q).all()]
+        query = query.filter(RecordInfo.methodologies.any(methodology))
+    results = [c._asdict() for c in db.session.execute(query).all()]
     return results
 
 
@@ -104,15 +115,15 @@ def pdf_by_id(internal_id, record_type):
     None.
     """
     if record_type.lower() == "fact sheet":
-        q = db.select(FactSheets.pdf_data).filter(FactSheets.internal_id==internal_id)
+        query = db.select(FactSheets.pdf_data).filter(FactSheets.internal_id==internal_id)
     elif record_type.lower() == "method":
-        q = db.select(Methods.pdf_data).filter(Methods.internal_id==internal_id)
+        query = db.select(Methods.pdf_data).filter(Methods.internal_id==internal_id)
     elif record_type.lower() == "spectrum":
-        q = db.select(AnalyticalQC.pdf_data).filter(AnalyticalQC.internal_id==internal_id)
+        query = db.select(AnalyticalQC.pdf_data).filter(AnalyticalQC.internal_id==internal_id)
     else:
         return f"Error: invalid record type {record_type}."
     
-    data_row = db.session.execute(q).first()
+    data_row = db.session.execute(query).first()
     if data_row is not None:
         return data_row.pdf_data
     else:
@@ -165,11 +176,11 @@ def record_counts_by_dtxsid(dtxsid_list):
 def substances_for_ids(internal_ids, additional_fields=[]):
     """
     Retrieves a deduplicated list of all substances that appear in a set of
-    internal IDs.  Can be either a single internal ID as a string or a list of
-    IDs.
+    internal IDs, including common identifiers and a flag for image locaion. Can
+    be either a single internal ID as a string or a list of IDs.
     """
     query = db.select(
-            Contents.dtxsid, Substances.preferred_name, Substances.casrn, *additional_fields
+            Contents.dtxsid, Substances.preferred_name, Substances.casrn, Substances.image_in_comptox, *additional_fields
         ).join_from(Contents, Substances, Contents.dtxsid==Substances.dtxsid)
     if type(internal_ids) == str:
         query = query.filter(Contents.internal_id==internal_ids)
