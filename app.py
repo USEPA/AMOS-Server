@@ -211,6 +211,7 @@ def search_results(dtxsid):
             else:
                 r["spectrum_rating"] = "N/A"
 
+    # Fill in missing record types with zeroes
     result_record_types = [r["record_type"] for r in records]
     record_type_counts = Counter(result_record_types)
     for record_type in ["Method", "Fact Sheet", "Spectrum"]:
@@ -500,7 +501,7 @@ def get_similar_methods(dtxsid):
     results = [{
             **r, "similarity": similarity_dict[r["dtxsid"]], "substance_name":dtxsid_names.get(r["dtxsid"]),
             "has_searched_substance": r["internal_id"] in methods_with_searched_substance,
-            "year_published": util.clean_year(r["date_published"]), "methodology": ", ".join(r["methodologies"])
+            "year_published": util.clean_year(r["date_published"]), "methodology": ", ".join(r["methodologies"]) if r["methodologies"] is not None else None
         } for r in results]
     ids_to_method_names = {r["internal_id"]:r["method_name"] for r in results}
 
@@ -663,6 +664,9 @@ def get_substances_for_ids():
 
 @app.route("/count_substances_in_ids/", methods=["POST"])
 def count_substances_in_ids():
+    """
+    Counts the number of unique substances seen in a given set of internal IDs.
+    """
     internal_id_list = request.get_json()["internal_id_list"]
     q = db.select(func.count(Contents.dtxsid.distinct())).filter(Contents.internal_id.in_(internal_id_list))
     dtxsid_count = db.session.execute(q).first()._asdict()
