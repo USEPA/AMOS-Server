@@ -523,12 +523,22 @@ def batch_search():
     element, but no other parameters are required.
     """
     parameters = request.get_json()
-    dtxsid_list = parameters["dtxsids"]
     base_url = parameters["base_url"]
+    dtxsid_list = parameters["dtxsids"]
+    include_classyfire = parameters["include_classyfire"]
     include_spectrabase = parameters["include_spectrabase"]
-    record_types = parameters["record_types"]
     methodologies = parameters["methodologies"]
+    record_types = parameters["record_types"]
+    include_analyticalqc = parameters["include_analyticalqc"]
 
+    if include_classyfire:
+        substance_query = db.select(
+                Substances.dtxsid, Substances.casrn, Substances.preferred_name, ClassyFire.kingdom, ClassyFire.superklass,
+                ClassyFire.klass, ClassyFire.subklass
+            ).join_from(
+                Substances, ClassyFire, Substances.dtxsid==ClassyFire.dtxsid
+            ).filter(Substances.dtxsid.in_(dtxsid_list))
+    
     substance_query = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsid_list))
     substances = [c._asdict() for c in db.session.execute(substance_query).all()]
     substance_df = pd.DataFrame(substances)
@@ -582,6 +592,23 @@ def batch_search():
     result_counts.columns = ["dtxsid", "num_records"]
     result_counts = pd.DataFrame({"dtxsid":dtxsid_list}).merge(substance_df, how="left", on="dtxsid").merge(result_counts, how="left", on="dtxsid")
     result_counts["num_records"] = result_counts["num_records"].fillna(0)
+
+    # add more substance info, if appropriate
+    if include_classyfire:
+        classyfire_query = db.select(
+                ClassyFire.dtxsid, ClassyFire.kingdom, ClassyFire.superklass, ClassyFire.klass, ClassyFire.subklass
+            ).filter(ClassyFire.dtxsid.in_(dtxsid_list))
+        classyfire_results = [c._asdict() for c in db.session.execute(classyfire_query).all()]
+        classyfire_df = pd.DataFrame(classyfire_results)
+        result_counts = result_counts.merge(classyfire_df, how="left", on="dtxsid")
+    
+    if include_analyticalqc:
+        analytical_qc_query = db.select(
+                AnalyticalQC.internal_id, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint, AnalyticalQC.stability_call, AnalyticalQC.timepoint
+            ).join_from(AnalyticalQC, Contents, AnalyticalQC.internal_id==Contents.internal_id).filter(Contents.dtxsid.in_(dtxsid_list))
+        analytical_qc_results = [c._asdict() for c in db.session.execute(analytical_qc_query).all()]
+        analytical_qc_df = pd.DataFrame(analytical_qc_results)
+        result_df = result_df.merge(analytical_qc_df, how="left", on="internal_id")
 
     excel_file = util.make_excel_file({"Substances": result_counts, "Records": result_df})
     headers = {"Content-Disposition": "attachment; filename=batch_search.xlsx", "Content-type":"application/vnd.ms-excel"}
@@ -1080,7 +1107,6 @@ def fact_sheets_for_substance(dtxsid):
     info_list = cq.ids_for_substances([dtxsid], record_type="Fact Sheet")
     fact_sheet_ids = [r["internal_id"] for r in info_list]
     return jsonify({"internal_ids": fact_sheet_ids})
-    
 
     
 

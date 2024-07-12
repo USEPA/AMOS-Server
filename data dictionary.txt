@@ -69,6 +69,7 @@ This table contains information specific to fact sheets stored in the database, 
 - fact_sheet_name: The name/title of the fact sheet.
 - document_type: A shorthand for the type of document.  Usually an abbreviation.
 - analyte: The analyte being examined in the fact sheet.
+- functional_classes: A list of the functional use classifications for the substance(s) in the fact sheet.
 
 
 METHODS
