@@ -71,6 +71,7 @@ class MassSpectra(db.Model):
     normalized_entropy = db.Column(db.REAL)
     has_associated_method = db.Column(db.BOOLEAN)
     spectrum_metadata = db.Column(db.JSON)
+    ms_level = db.Column(db.INTEGER)
 
 
 class SpectrumPDFs(db.Model):

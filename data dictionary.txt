@@ -48,6 +48,7 @@ This table stores information specific to mass spectra whose spectra are stored 
 - normalized_entropy: A measurement of the quality of a spectrum.  It is a scaling of the spectral entropy to try to offset the effects of having a large number of peaks in the data.
 - has_associated_method: A boolean indicating whether there is a method associated with this spectrum.
 - spectrum_metadata: A JSON document storing information about the spectrum, usually about the instrument and test conditions it was created under.
+- ms_level: Integer representing the main MS level (1 for MS1, 2 for MS2, etc.).  This is included in the metadata as well, but it's easier to filter on it if it's a field of its own.
 
 
 SPECTRUM PDFS

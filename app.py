@@ -274,7 +274,8 @@ def fact_sheet_list():
     """
 
     q = db.select(
-        FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.analyte, FactSheets.document_type, RecordInfo.source, RecordInfo.link, func.count(Contents.dtxsid)
+        FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.analyte, FactSheets.document_type, FactSheets.functional_classes,
+        RecordInfo.source, RecordInfo.link, func.count(Contents.dtxsid)
     ).join_from(
         FactSheets, RecordInfo, FactSheets.internal_id==RecordInfo.internal_id
     ).join_from(
@@ -511,16 +512,13 @@ def get_similar_methods(dtxsid):
     return jsonify({"results":results, "ids_to_method_names":ids_to_method_names, "dtxsid_counts":dtxsid_counts})
 
 
-@app.route("/batch_search", methods=["POST"])
+@app.post("/batch_search")
 def batch_search():
     """
     Receives a list of DTXSIDs and returns information on all records in the
     database that contain those DTXSIDs.  If a record contains more than one of
     the searched DTXSIDs, then that record will appear once for each searched
     substance it contains.
-
-    The POST should contain a list of DTXSIDs in a corresponding "dtxsids"
-    element, but no other parameters are required.
     """
     parameters = request.get_json()
     base_url = parameters["base_url"]
@@ -530,14 +528,6 @@ def batch_search():
     methodologies = parameters["methodologies"]
     record_types = parameters["record_types"]
     include_analyticalqc = parameters["include_analyticalqc"]
-
-    if include_classyfire:
-        substance_query = db.select(
-                Substances.dtxsid, Substances.casrn, Substances.preferred_name, ClassyFire.kingdom, ClassyFire.superklass,
-                ClassyFire.klass, ClassyFire.subklass
-            ).join_from(
-                Substances, ClassyFire, Substances.dtxsid==ClassyFire.dtxsid
-            ).filter(Substances.dtxsid.in_(dtxsid_list))
     
     substance_query = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsid_list))
     substances = [c._asdict() for c in db.session.execute(substance_query).all()]
@@ -615,6 +605,66 @@ def batch_search():
     return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
 
 
+@app.post("/analytical_qc_batch_search")
+def analytical_qc_batch_search():
+    """
+    Receives a list of DTXSIDs and returns information on all Analytical QC 
+    records that contain those DTXSIDs.
+    """
+    parameters = request.get_json()
+    dtxsid_list = parameters["dtxsids"]
+    include_classyfire = parameters["include_classyfire"]
+    methodologies = parameters["methodologies"]
+    
+    substance_query = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsid_list))
+    substances = [c._asdict() for c in db.session.execute(substance_query).all()]
+    substance_df = pd.DataFrame(substances)
+
+    record_query = db.select(
+            Contents.internal_id, Contents.dtxsid, RecordInfo.methodologies, RecordInfo.link, RecordInfo.description
+        ).join_from(
+            Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
+        ).filter(Contents.dtxsid.in_(dtxsid_list) & (RecordInfo.source == "Analytical QC"))
+    
+    if not methodologies["all"]:
+        accepted_methodologies = [k for k,v in methodologies.items() if (k != "all") and v]
+        record_query = record_query.filter(or_(*[RecordInfo.methodologies.contains([am]) for am in accepted_methodologies]))
+
+    records = [c._asdict() for c in db.session.execute(record_query).all()]
+    if len(records) == 0:
+        return Response(status=204)
+
+    record_df = pd.DataFrame(records)
+    record_df["methodologies"] = record_df["methodologies"].apply(lambda x: x[0])
+
+    result_df = substance_df.merge(record_df, how="right", on="dtxsid")
+
+    result_counts = record_df.groupby(["dtxsid"]).size().reset_index()
+    result_counts.columns = ["dtxsid", "num_records"]
+    result_counts = pd.DataFrame({"dtxsid":dtxsid_list}).merge(substance_df, how="left", on="dtxsid").merge(result_counts, how="left", on="dtxsid")
+    result_counts["num_records"] = result_counts["num_records"].fillna(0)
+
+    # add more substance info, if appropriate
+    if include_classyfire:
+        classyfire_query = db.select(
+                ClassyFire.dtxsid, ClassyFire.kingdom, ClassyFire.superklass, ClassyFire.klass, ClassyFire.subklass
+            ).filter(ClassyFire.dtxsid.in_(dtxsid_list))
+        classyfire_results = [c._asdict() for c in db.session.execute(classyfire_query).all()]
+        classyfire_df = pd.DataFrame(classyfire_results)
+        result_counts = result_counts.merge(classyfire_df, how="left", on="dtxsid")
+    
+    analytical_qc_query = db.select(
+            AnalyticalQC.internal_id, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint, AnalyticalQC.stability_call, AnalyticalQC.timepoint
+        ).join_from(AnalyticalQC, Contents, AnalyticalQC.internal_id==Contents.internal_id).filter(Contents.dtxsid.in_(dtxsid_list))
+    analytical_qc_results = [c._asdict() for c in db.session.execute(analytical_qc_query).all()]
+    analytical_qc_df = pd.DataFrame(analytical_qc_results)
+    result_df = result_df.merge(analytical_qc_df, how="left", on="internal_id")
+
+    excel_file = util.make_excel_file({"Substances": result_counts, "Records": result_df})
+    headers = {"Content-Disposition": "attachment; filename=batch_search.xlsx", "Content-type":"application/vnd.ms-excel"}
+    return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
+
+
 @app.route("/method_with_spectra/<search_type>/<internal_id>")
 def method_with_spectra_search(search_type, internal_id):
     """
@@ -648,7 +698,7 @@ def method_with_spectra_search(search_type, internal_id):
     return jsonify({"method_id": method_id, "spectrum_ids": spectrum_list, "info": info_entries})
 
 
-@app.route("/spectrum_count_for_methodology/", methods=["POST"])
+@app.post("/spectrum_count_for_methodology/")
 def get_spectrum_count_for_methodology():
     """
     Endpoint for getting a count of spectrum records that have the specified
@@ -672,7 +722,7 @@ def get_spectrum_count_for_methodology():
     return jsonify({"count": len(db.session.execute(q).all())})
 
 
-@app.route("/substances_for_ids/", methods=["POST"])
+@app.post("/substances_for_ids/")
 def get_substances_for_ids():
     """
     Accepts a list of internal_ids (via POST) and returns a deduplicated list substances
@@ -689,7 +739,7 @@ def get_substances_for_ids():
     return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
 
 
-@app.route("/count_substances_in_ids/", methods=["POST"])
+@app.post("/count_substances_in_ids/")
 def count_substances_in_ids():
     """
     Counts the number of unique substances seen in a given set of internal IDs.
@@ -700,7 +750,7 @@ def count_substances_in_ids():
     return jsonify(dtxsid_count)
 
 
-@app.route("/mass_spectrum_similarity_search/", methods=["POST"])
+@app.post("/mass_spectrum_similarity_search/")
 def mass_spectrum_similarity_search():
     """
     Takes a mass range, methodology, and mass spectrum, and returns all spectra
@@ -724,7 +774,7 @@ def mass_spectrum_similarity_search():
 
 
 
-@app.route("/spectral_entropy/", methods=["POST"])
+@app.post("/spectral_entropy/")
 def spectral_entropy():
     """
     Calculates the spectral entropy for a single spectrum.
@@ -733,7 +783,7 @@ def spectral_entropy():
     return jsonify({"entropy": entropy})
 
 
-@app.route("/entropy_similarity/", methods=["POST"])
+@app.post("/entropy_similarity/")
 def entropy_similarity():
     """
     Calculates the entropy similarity for two spectra.
@@ -743,7 +793,7 @@ def entropy_similarity():
     return jsonify({"similarity": similarity})
 
 
-@app.route("/record_counts_by_dtxsid/", methods=["POST"])
+@app.post("/record_counts_by_dtxsid/")
 def get_record_counts_by_dtxsid():
     """
     Takes a list of DTXSIDs as the POST argument, and for each DTXSID, it
@@ -755,7 +805,7 @@ def get_record_counts_by_dtxsid():
     return jsonify(record_count_dict)
 
 
-@app.route("/max_similarity_by_dtxsid/", methods=["POST"])
+@app.post("/max_similarity_by_dtxsid/")
 def max_similarity_by_dtxsid():
     """
     This endpoint allows a user to submit a list of DTXSIDs and a mass spectrum.  In
@@ -800,7 +850,7 @@ def max_similarity_by_dtxsid():
     return jsonify({"results":substance_dict})
 
 
-@app.route("/all_similarities_by_dtxsid/", methods=["POST"])
+@app.post("/all_similarities_by_dtxsid/")
 def all_similarities_by_dtxsid():
     request_json = request.get_json()
     dtxsids = request_json["dtxsids"]
@@ -866,7 +916,7 @@ def database_summary():
     return jsonify({k: dict(v) for k,v in summary_dict.items()})
 
 
-@app.route("/mass_spectra_for_substances/", methods=["POST"])
+@app.post("/mass_spectra_for_substances/")
 def mass_spectra_for_substances():
     """
     Given a list of DTXSIDs, return all spectra for those substances.
@@ -1053,7 +1103,7 @@ def get_classification_for_dtxsid(dtxsid):
         return Response(status=204)
 
 
-@app.route("/substances_for_classification/", methods=["POST"])
+@app.post("/substances_for_classification/")
 def substances_for_classification():
     request_json = request.get_json()
     kingdom, superklass, klass, subklass =  request_json.get("kingdom"), request_json.get("superklass"), request_json.get("klass"), request_json.get("subklass")
@@ -1069,13 +1119,14 @@ def substances_for_classification():
     record_counts = cq.record_counts_by_dtxsid(dtxsids)
     for s in substances:
         records = record_counts[s["dtxsid"]]
-        num_records = records.get("Method", 0) + records.get("Fact Sheet", 0) + records.get("Spectrum", 0)
-        s["count"] = num_records
+        s["methods"] = records.get("Method", 0)
+        s["fact_sheets"] = records.get("Fact Sheet", 0)
+        s["spectra"] = records.get("Spectrum", 0)
     
     return jsonify({"substances": substances})
 
 
-@app.route("/next_level_classification/", methods=["POST"])
+@app.post("/next_level_classification/")
 def next_level_classification():
     request_json = request.get_json()
     kingdom, superklass, klass =  request_json.get("kingdom"), request_json.get("superklass"), request_json.get("klass")
