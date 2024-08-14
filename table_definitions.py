@@ -152,6 +152,8 @@ class AnalyticalQC(db.Model):
     annotation = db.Column(db.TEXT)
     sample_id = db.Column(db.TEXT)
     flags = db.Column(db.TEXT)
+    lcms_amen_pos_true = db.Column(db.INTEGER)
+    lcms_amen_neg_true = db.Column(db.INTEGER)
 
 
 class DatabaseSummary(db.Model):
@@ -196,6 +198,7 @@ class NMRSpectra(db.Model):
     x_units = db.Column(db.VARCHAR(16))
     intensities = db.Column(ARRAY(db.REAL, dimensions=1))
     spectrum_metadata = db.Column(db.JSON)
+    splash = db.Column(db.VARCHAR(45))
 
 
 class ClassyFire(db.Model):

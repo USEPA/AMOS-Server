@@ -452,8 +452,8 @@ def find_similar_substances(dtxsid, similarity_threshold=0.8):
         return {"similar_substance_info": None}
 
 
-@app.route("/get_similar_methods/<dtxsid>")
-def get_similar_methods(dtxsid):
+@app.route("/get_similar_structures/<dtxsid>")
+def get_similar_structures(dtxsid):
     """
     Searches the database for all methods which contain at least one substance
     of sufficient similarity to the searched substance.  The searched similarity
@@ -482,7 +482,7 @@ def get_similar_methods(dtxsid):
     similar_dtxsids.append(dtxsid)
     similarity_dict[dtxsid] = 1.0001
 
-    q = db.select(
+    methods_query = db.select(
             Contents.internal_id, Contents.dtxsid, RecordInfo.source, RecordInfo.methodologies,
             Methods.method_name, Methods.date_published
         ).filter(
@@ -492,24 +492,47 @@ def get_similar_methods(dtxsid):
         ).join_from(
             Contents, Methods, Contents.internal_id==Methods.internal_id
         )
-    results = [c._asdict() for c in db.session.execute(q).all()]
+    method_results = [c._asdict() for c in db.session.execute(methods_query).all()]
 
-    methods_with_searched_substance = [r["internal_id"] for r in results if r["dtxsid"] == dtxsid]
-    dtxsid_names = cq.names_for_dtxsids([r["dtxsid"] for r in results])
+    fact_sheet_query = db.select(
+            Contents.internal_id, Contents.dtxsid, RecordInfo.source, FactSheets.fact_sheet_name
+        ).filter(
+            Contents.dtxsid.in_(similar_dtxsids)
+        ).join_from(
+            Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
+        ).join_from(
+            Contents, FactSheets, Contents.internal_id==FactSheets.internal_id
+        )
+    fact_sheet_results = [c._asdict() for c in db.session.execute(fact_sheet_query).all()]
+
+    methods_with_searched_substance = [r["internal_id"] for r in method_results if r["dtxsid"] == dtxsid]
+    fact_sheets_with_searched_substance = [r["internal_id"] for r in fact_sheet_results if r["dtxsid"] == dtxsid]
+    dtxsid_names = cq.names_for_dtxsids([r["dtxsid"] for r in method_results+fact_sheet_results])
 
     # merge info, supply a boolean for whether the searched substance is in the
     # method, and parse the publication year
-    results = [{
+    method_results = [{
             **r, "similarity": similarity_dict[r["dtxsid"]], "substance_name":dtxsid_names.get(r["dtxsid"]),
             "has_searched_substance": r["internal_id"] in methods_with_searched_substance,
             "year_published": util.clean_year(r["date_published"]), "methodology": ", ".join(r["methodologies"]) if r["methodologies"] is not None else None
-        } for r in results]
-    ids_to_method_names = {r["internal_id"]:r["method_name"] for r in results}
+        } for r in method_results]
+    ids_to_method_names = {r["internal_id"]:r["method_name"] for r in method_results}
 
-    dtxsid_counts = Counter([r["dtxsid"] for r in results])
-    dtxsid_counts = [{"dtxsid": k, "num_methods": v, "preferred_name": dtxsid_names.get(k), "similarity": similarity_dict[k]} for k, v in dtxsid_counts.items()]
+    fact_sheet_results = [{
+            **r, "similarity": similarity_dict[r["dtxsid"]], "substance_name":dtxsid_names.get(r["dtxsid"]),
+            "has_searched_substance": r["internal_id"] in fact_sheets_with_searched_substance
+        } for r in fact_sheet_results]
+    ids_to_fact_sheet_names = {r["internal_id"]:r["fact_sheet_name"] for r in fact_sheet_results}
 
-    return jsonify({"results":results, "ids_to_method_names":ids_to_method_names, "dtxsid_counts":dtxsid_counts})
+    method_dtxsid_counts = Counter([r["dtxsid"] for r in method_results])
+    fact_sheet_dtxsid_counts = Counter([r["dtxsid"] for r in fact_sheet_results])
+    dtxsid_counts = [{"dtxsid": k, "num_methods": method_dtxsid_counts.get(k, 0), "num_fact_sheets": fact_sheet_dtxsid_counts.get(k, 0), "preferred_name": v, "similarity": similarity_dict[k]} for k, v in dtxsid_names.items()]
+
+    return jsonify({
+        "method_results":method_results, "fact_sheet_results": fact_sheet_results,
+        "ids_to_method_names":ids_to_method_names, "ids_to_fact_sheet_names": ids_to_fact_sheet_names,
+        "dtxsid_counts":dtxsid_counts
+        })
 
 
 @app.post("/batch_search")
@@ -524,7 +547,7 @@ def batch_search():
     base_url = parameters["base_url"]
     dtxsid_list = parameters["dtxsids"]
     include_classyfire = parameters["include_classyfire"]
-    include_spectrabase = parameters["include_spectrabase"]
+    include_external_links = parameters["include_external_links"]
     methodologies = parameters["methodologies"]
     record_types = parameters["record_types"]
     include_analyticalqc = parameters["include_analyticalqc"]
@@ -551,9 +574,9 @@ def batch_search():
     if len(records) == 0:
         return Response(status=204)
 
-    if not include_spectrabase:
+    if not include_external_links:
         # don't add this as a filter to the query; it'll miss records without sources if it's added there
-        records = [r for r in records if r["source"] != "SpectraBase"]
+        records = [r for r in records if r["data_type"] is not None]
     for i, r in enumerate(records):
         # if a record has no link, have it link back AMOS's spectrum viewer;
         # currently only spectra should be linkless, but this should be fixed to
@@ -565,7 +588,7 @@ def batch_search():
                 elif r["data_type"] == "PDF":
                     records[i]["link"] = f"{base_url}/view_spectrum_pdf/{r['internal_id']}"
                 elif r["data_type"] == "NMR Spectrum":
-                    pass  # add this case once a dedicated page has been set up
+                    records[i]["link"] = f"{base_url}/view_nmr_spectrum/{r['internal_id']}"
             elif r["record_type"] == "Fact Sheet":
                 records[i]["link"] = f"{base_url}/view_fact_sheet/{r['internal_id']}"
             elif r["record_type"] == "Method":
@@ -594,7 +617,8 @@ def batch_search():
     
     if include_analyticalqc:
         analytical_qc_query = db.select(
-                AnalyticalQC.internal_id, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint, AnalyticalQC.stability_call, AnalyticalQC.timepoint
+                AnalyticalQC.internal_id, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint, AnalyticalQC.stability_call, AnalyticalQC.timepoint,
+                AnalyticalQC.lcms_amen_pos_true, AnalyticalQC.lcms_amen_neg_true
             ).join_from(AnalyticalQC, Contents, AnalyticalQC.internal_id==Contents.internal_id).filter(Contents.dtxsid.in_(dtxsid_list))
         analytical_qc_results = [c._asdict() for c in db.session.execute(analytical_qc_query).all()]
         analytical_qc_df = pd.DataFrame(analytical_qc_results)
@@ -1047,7 +1071,7 @@ def analytical_qc_list():
         Contents.internal_id, Contents.dtxsid, Substances.preferred_name, Substances.casrn, Substances.molecular_formula,
         AnalyticalQC.experiment_date, AnalyticalQC.timepoint, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint,
         AnalyticalQC.stability_call, AnalyticalQC.annotation, AnalyticalQC.study, AnalyticalQC.sample_id,
-        AnalyticalQC.flags
+        AnalyticalQC.lcms_amen_pos_true, AnalyticalQC.lcms_amen_neg_true, AnalyticalQC.flags
     ).join_from(
         AnalyticalQC, Contents, AnalyticalQC.internal_id == Contents.internal_id
     ).join_from(

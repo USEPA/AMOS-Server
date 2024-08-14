@@ -123,6 +123,8 @@ This table stores a collection of spectra-containing PDFs that are from the Anal
 - annotation: Additional annotation for the experiment.
 - sample_id: ID for sample.  Based on the Tox21 ID, or the bottle barcode if it's missing.
 - flags: Semicolon-delimited list of flags associated with a record's substance.
+- lcms_amen_pos_true: Substance-level flag for indicating amenability to ESI+ LC/MS.  Manually curated.
+- lcms_amen_neg_true: Substance-level flag for indicating amenability to ESI- LC/MS.  Manually curated.
 
 
 DATABASE SUMMARY
@@ -153,6 +155,7 @@ This table holds one-dimensional NMR spectra, along with some associated informa
 - x_units: Units on the horizontal axis.  I believe we're hoping to standardize on ppm, so this may go away in the future.
 - intensities: One-dimensional array containing the intensities.  The length of the array is also used to interpolate the values on the horizontal axis.
 - spectrum_metadata: JSON structure containing additional data of interest for the spectrum.
+- splash: Spectral Hash Identifier.  See https://splash.fiehnlab.ucdavis.edu/ for more information.
 
 
 CLASSYFIRE
