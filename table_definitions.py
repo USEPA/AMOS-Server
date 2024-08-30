@@ -213,3 +213,10 @@ class ClassyFire(db.Model):
     geometric_descriptor = db.Column(db.TEXT)
     alternative_parents = db.Column(ARRAY(db.TEXT, dimensions=1))
     substituents = db.Column(ARRAY(db.TEXT, dimensions=1))
+
+
+class FunctionalUseClasses(db.Model):
+    __tablename__ = "functional_use_classes"
+    __table_args__ = {'schema': 'amos'}
+    dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
+    functional_classes = db.Column(ARRAY(db.TEXT, dimensions=1))

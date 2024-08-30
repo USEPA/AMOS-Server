@@ -169,3 +169,9 @@ This table contains a copy of ClassyFire, which defines classifications for subs
 - geometric_descriptor: Structure-based category for the substance.
 - alternative_parents: Additional categories that are valid descriptions of the substance.
 - substituents: Structural features in the substance that can be substituted.
+
+
+FUNCTIONAL USE CLASSIFICATIONS
+A list of manually-curated functional uses for substances, listed by DTXSID.
+- dtxsid: Same as elsewhere.
+- functional_classes: List of text strings denoting classes.
