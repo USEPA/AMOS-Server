@@ -175,3 +175,16 @@ FUNCTIONAL USE CLASSIFICATIONS
 A list of manually-curated functional uses for substances, listed by DTXSID.
 - dtxsid: Same as elsewhere.
 - functional_classes: List of text strings denoting classes.
+
+
+DATA SOURCE INFO
+This is a list of information on some of the more prominent data sources that appear in AMOS.  Listings are currently limited to sources that have at least 40 methods or at least 100 records total.
+- full_name: The full, official name of the source.
+- source_ids: A listing of the shorter names that can appear in the 'Source' field in various tables.  This is for cases where one organization might be responsible for several separate projects or groups -- e.g., the EPA's Office of Water is counted as being from the EPA for the purposes of this table.
+- category: A rough categorization of the source.  Examples include government agencies (national or international), journals, and vendors.
+- description: A couple sentences describing the source.  May include caveats about the source's data, like if a journal's articles are often paywalled.
+- url: Link to the home page of the source.
+- substances: Count of unique substances that appear in the source's records.
+- fact_sheets: Number of fact sheets from the source.
+- methods: Number of methods from the source.
+- spectra: Number of spectra (of any type) from the source.  Includes spectra that are only external links.
