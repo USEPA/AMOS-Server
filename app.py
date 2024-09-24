@@ -12,8 +12,8 @@ from sqlalchemy import func, or_
 
 import common_queries as cq
 import spectrum
-from table_definitions import db, AnalyticalQC, ClassyFire, Contents, FactSheets, \
-    Methods, MethodsWithSpectra, RecordInfo, MassSpectra, NMRSpectra, \
+from table_definitions import db, AnalyticalQC, ClassyFire, Contents, DataSourceInfo, \
+    FactSheets, Methods, MethodsWithSpectra, RecordInfo, MassSpectra, NMRSpectra, \
     SubstanceImages, Substances, SpectrumPDFs, Synonyms
 import util
 
@@ -557,8 +557,8 @@ def batch_search():
     substance_df = pd.DataFrame(substances)
 
     record_query = db.select(
-            Contents.internal_id, Contents.dtxsid, RecordInfo.methodologies, RecordInfo.source, RecordInfo.link, RecordInfo.record_type,
-            RecordInfo.description, RecordInfo.data_type
+            Contents.internal_id, Contents.dtxsid, RecordInfo.methodologies, RecordInfo.source, RecordInfo.link,
+            RecordInfo.record_type, RecordInfo.description, RecordInfo.data_type
         ).join_from(
             Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
         ).filter(Contents.dtxsid.in_(dtxsid_list))
@@ -581,18 +581,17 @@ def batch_search():
         # if a record has no link, have it link back AMOS's spectrum viewer;
         # currently only spectra should be linkless, but this should be fixed to
         # be a more general case in the future, just in case
-        if r["link"] is None:
-            if r["record_type"] == "Spectrum":
-                if r["data_type"] == "Mass Spectrum":
-                    records[i]["link"] = f"{base_url}/view_mass_spectrum/{r['internal_id']}"
-                elif r["data_type"] == "PDF":
-                    records[i]["link"] = f"{base_url}/view_spectrum_pdf/{r['internal_id']}"
-                elif r["data_type"] == "NMR Spectrum":
-                    records[i]["link"] = f"{base_url}/view_nmr_spectrum/{r['internal_id']}"
-            elif r["record_type"] == "Fact Sheet":
-                records[i]["link"] = f"{base_url}/view_fact_sheet/{r['internal_id']}"
-            elif r["record_type"] == "Method":
-                records[i]["link"] = f"{base_url}/view_method/{r['internal_id']}"
+        if r["record_type"] == "Spectrum":
+            if r["data_type"] == "Mass Spectrum":
+                records[i]["AMOS Link"] = f"{base_url}/view_mass_spectrum/{r['internal_id']}"
+            elif r["data_type"] == "PDF":
+                records[i]["AMOS Link"] = f"{base_url}/view_spectrum_pdf/{r['internal_id']}"
+            elif r["data_type"] == "NMR Spectrum":
+                records[i]["AMOS Link"] = f"{base_url}/view_nmr_spectrum/{r['internal_id']}"
+        elif r["record_type"] == "Fact Sheet":
+            records[i]["AMOS Link"] = f"{base_url}/view_fact_sheet/{r['internal_id']}"
+        elif r["record_type"] == "Method":
+            records[i]["AMOS Link"] = f"{base_url}/view_method/{r['internal_id']}"
     record_df = pd.DataFrame(records)
     record_df.drop("data_type", axis=1, inplace=True)
 
@@ -600,6 +599,14 @@ def batch_search():
     record_df.loc[has_methodology, "methodologies"] = record_df.loc[has_methodology, "methodologies"].apply(lambda x: "; ".join(x))
 
     result_df = substance_df.merge(record_df, how="right", on="dtxsid")
+    result_df = result_df[[
+        "dtxsid", "casrn", "preferred_name", "internal_id", "methodologies", "source", "record_type",
+        "AMOS Link", "link", "description"
+    ]]
+    result_df.rename({
+        "dtxsid": "DTXSID", "casrn": "CASRN", "preferred_name": "Substance Name", "internal_id": "AMOS Record ID", "source": "Source",
+        "record_type": "Record Type", "description": "Description", "link": "Source Link", "methodologies": "Methodologies"
+    }, axis=1, inplace=True)
 
     result_counts = record_df.groupby(["dtxsid"]).size().reset_index()
     result_counts.columns = ["dtxsid", "num_records"]
@@ -623,6 +630,11 @@ def batch_search():
         analytical_qc_results = [c._asdict() for c in db.session.execute(analytical_qc_query).all()]
         analytical_qc_df = pd.DataFrame(analytical_qc_results)
         result_df = result_df.merge(analytical_qc_df, how="left", on="internal_id")
+    
+    result_counts.rename({
+        "dtxsid": "DTXSID", "casrn": "CASRN", "preferred_name": "Substance Name", "num_records": "# of Records",
+        "kingdom": "Kingdom", "superklass": "Superclass", "klass": "Class", "subklass": "Subclass"
+    }, axis=1, inplace=True)
 
     excel_file = util.make_excel_file({"Substances": result_counts, "Records": result_df})
     headers = {"Content-Disposition": "attachment; filename=batch_search.xlsx", "Content-type":"application/vnd.ms-excel"}
@@ -639,6 +651,7 @@ def analytical_qc_batch_search():
     dtxsid_list = parameters["dtxsids"]
     include_classyfire = parameters["include_classyfire"]
     methodologies = parameters["methodologies"]
+    base_url = parameters["base_url"]
     
     substance_query = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsid_list))
     substances = [c._asdict() for c in db.session.execute(substance_query).all()]
@@ -660,6 +673,7 @@ def analytical_qc_batch_search():
 
     record_df = pd.DataFrame(records)
     record_df["methodologies"] = record_df["methodologies"].apply(lambda x: x[0])
+    record_df["AMOS Link"] = record_df["internal_id"].apply(lambda x: f"{base_url}/view_spectrum_pdf/{x}")
 
     result_df = substance_df.merge(record_df, how="right", on="dtxsid")
 
@@ -683,6 +697,20 @@ def analytical_qc_batch_search():
     analytical_qc_results = [c._asdict() for c in db.session.execute(analytical_qc_query).all()]
     analytical_qc_df = pd.DataFrame(analytical_qc_results)
     result_df = result_df.merge(analytical_qc_df, how="left", on="internal_id")
+    
+    result_df = result_df[[
+        "dtxsid", "casrn", "preferred_name", "internal_id", "methodologies", "AMOS Link", "link", "description", "first_timepoint",
+        "last_timepoint", "stability_call", "timepoint"
+    ]]
+    result_df.rename({
+        "dtxsid": "DTXSID", "casrn": "CASRN", "preferred_name": "Substance Name", "internal_id": "AMOS Record ID", 
+        "description": "Description", "link": "Source Link", "methodologies": "Methodologies", "first_timepoint": "First Timepoint",
+        "last_timepoint": "Last Timepoint", "stability_call": "Stability Call", "timepoint": "Measurement Timepoint"
+    }, axis=1, inplace=True)
+    result_counts.rename({
+        "dtxsid": "DTXSID", "casrn": "CASRN", "preferred_name": "Substance Name", "num_records": "# of Records",
+        "kingdom": "Kingdom", "superklass": "Superclass", "klass": "Class", "subklass": "Subclass"
+    }, axis=1, inplace=True)
 
     excel_file = util.make_excel_file({"Substances": result_counts, "Records": result_df})
     headers = {"Content-Disposition": "attachment; filename=batch_search.xlsx", "Content-type":"application/vnd.ms-excel"}
@@ -1182,6 +1210,25 @@ def fact_sheets_for_substance(dtxsid):
     info_list = cq.ids_for_substances([dtxsid], record_type="Fact Sheet")
     fact_sheet_ids = [r["internal_id"] for r in info_list]
     return jsonify({"internal_ids": fact_sheet_ids})
+
+
+@app.route("/get_data_source_info/")
+def data_source_info():
+    """
+    Returns a list of major data sources in AMOS with some supplemental information.
+    """
+    query = db.select(DataSourceInfo)
+    return [c[0].get_row_contents() for c in db.session.execute(query).all()]
+
+
+@app.route("/record_id_search/<internal_id>")
+def record_id_search(internal_id):
+    id_query = db.select(RecordInfo.record_type, RecordInfo.data_type, RecordInfo.link).filter(RecordInfo.internal_id==internal_id)
+    result = db.session.execute(id_query).first()
+    if result:
+        return jsonify({"record_type": result.record_type, "data_type": result.data_type, "link": result.link})
+    else:
+        return jsonify({"record_type": None, "data_type": None, "link": None})
 
     
 

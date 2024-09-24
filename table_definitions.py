@@ -220,3 +220,24 @@ class FunctionalUseClasses(db.Model):
     __table_args__ = {'schema': 'amos'}
     dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
     functional_classes = db.Column(ARRAY(db.TEXT, dimensions=1))
+
+
+class DataSourceInfo(db.Model):
+    __tablename__ = "data_source_info"
+    __table_args__ = {'schema': 'amos'}
+    full_name = db.Column(db.TEXT, primary_key=True)
+    source_ids = db.Column(ARRAY(db.TEXT, dimensions=1))
+    category = db.Column(db.TEXT)
+    description = db.Column(db.TEXT)
+    url = db.Column(db.TEXT)
+    substances = db.Column(db.INTEGER)
+    fact_sheets = db.Column(db.INTEGER)
+    methods = db.Column(db.INTEGER)
+    spectra = db.Column(db.INTEGER)
+
+    def get_row_contents(self):
+        return {
+            "full_name": self.full_name, "source_ids": self.source_ids, "category": self.category,
+            "description": self.description, "url": self.url, "substances": self.substances,
+            "fact_sheets": self.fact_sheets, "methods": self.methods, "spectra": self.spectra
+        }
