@@ -119,7 +119,10 @@ def pdf_by_id(internal_id, record_type):
     elif record_type.lower() == "method":
         query = db.select(Methods.pdf_data).filter(Methods.internal_id==internal_id)
     elif record_type.lower() == "spectrum":
-        query = db.select(AnalyticalQC.pdf_data).filter(AnalyticalQC.internal_id==internal_id)
+        if internal_id.startswith("AnalyticalQC-"):
+            query = db.select(AnalyticalQC.pdf_data).filter(AnalyticalQC.internal_id==internal_id)
+        else:
+            query = db.select(SpectrumPDFs.pdf_data).filter(SpectrumPDFs.internal_id==internal_id)
     else:
         return f"Error: invalid record type {record_type}."
     
@@ -141,7 +144,10 @@ def pdf_metadata(internal_id, record_type):
     elif record_type == "fact sheet":
         query = db.select(FactSheets.fact_sheet_name.label("pdf_name"), FactSheets.pdf_metadata).filter(FactSheets.internal_id==internal_id)
     elif record_type == "spectrum":
-        query = db.select(AnalyticalQC.filename.label("pdf_name"), AnalyticalQC.pdf_metadata).filter(AnalyticalQC.internal_id==internal_id)
+        if internal_id.startswith("AnalyticalQC-"):
+            query = db.select(AnalyticalQC.filename.label("pdf_name"), AnalyticalQC.pdf_metadata).filter(AnalyticalQC.internal_id==internal_id)
+        else:
+            query = db.select(SpectrumPDFs.internal_id.label("pdf_name"), SpectrumPDFs.pdf_metadata).filter(SpectrumPDFs.internal_id==internal_id)
     else:
         return {"error": f"Error: invalid record type {record_type}."}
     
