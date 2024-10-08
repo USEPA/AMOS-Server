@@ -8,7 +8,7 @@ on:
 jobs:
   code-scan:
     name: code-scan
-    runs-on: th889
+    runs-on: th879
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
