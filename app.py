@@ -12,8 +12,8 @@ from sqlalchemy import func, or_
 
 import common_queries as cq
 import spectrum
-from table_definitions import db, AnalyticalQC, ClassyFire, Contents, DataSourceInfo, \
-    FactSheets, Methods, MethodsWithSpectra, RecordInfo, MassSpectra, NMRSpectra, \
+from table_definitions import db, AnalyticalQC, ClassyFire, Contents, DataSourceInfo, FactSheets, \
+    FunctionalUseClasses, Methods, MethodsWithSpectra, RecordInfo, MassSpectra, NMRSpectra, \
     SubstanceImages, Substances, SpectrumPDFs, Synonyms
 import util
 
@@ -128,9 +128,10 @@ def get_substances_for_search_term(search_term):
                 ambiguity = "synonym"
     
     elif search_type == SearchType.InChIKey:
-        inchikey_first_block = search_term[:14]
+        results = cq.inchikey_first_block_search(search_term[:14])
+        """ inchikey_first_block = search_term[:14]
         q = q.filter(Substances.jchem_inchikey.like(inchikey_first_block+"%") | Substances.indigo_inchikey.like(inchikey_first_block+"%"))
-        results = [r[0].get_row_contents() for r in db.session.execute(q).all()]
+        results = [r[0].get_row_contents() for r in db.session.execute(q).all()] """
         inchikey_present = any([r["jchem_inchikey"] == search_term for r in results]) or any([r["indigo_inchikey"] == search_term for r in results])
         if inchikey_present and len(results) == 1:
             substances = results[0]
@@ -330,6 +331,8 @@ def method_list():
         if pm := r.get("pdf_metadata"):
             r["author"] = pm.get("Author", None)
             r["limitation"] = pm.get("Limitation", None)
+            r["limit_of_detection"] = pm.get("Limit of Detection", None)
+            r["limit_of_quantitation"] = pm.get("Limit of Quantitation", None)
             del r["pdf_metadata"]
         else:
             r["author"] = None
@@ -1230,7 +1233,30 @@ def record_id_search(internal_id):
     else:
         return jsonify({"record_type": None, "data_type": None, "link": None})
 
-    
+
+@app.route("/functional_uses_for_dtxsid/<dtxsid>")
+def functional_uses_for_dtxsid(dtxsid):
+    query = db.select(FunctionalUseClasses.functional_classes).filter(FunctionalUseClasses.dtxsid==dtxsid)
+    result = db.session.execute(query).first()
+    if result:
+        return jsonify(result._asdict())
+    else:
+        return jsonify({"functional_classes": None})
+
+
+@app.route("/dtxsids_for_functional_use/<functional_use>")
+def dtxsids_for_functional_use(functional_use):
+    query = db.select(FunctionalUseClasses.dtxsid).filter(FunctionalUseClasses.functional_classes.any(functional_use))
+    dtxsid_list = [c.dtxsid for c in db.session.execute(query).all()]
+    return jsonify({"dtxsids": dtxsid_list})
+
+
+@app.route("/formula_search/<formula>")
+def formula_search(formula):
+    results = cq.formula_search(formula)
+    return jsonify({"substances": results})
+
+
 
 if __name__ == "__main__":
     db.init_app(app)

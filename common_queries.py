@@ -45,6 +45,15 @@ def database_summary():
     return [c[0].get_row_contents() for c in db.session.execute(query).all()]
 
 
+def formula_search(formula):
+    """
+    Search
+    """
+    query = db.select(Substances).filter(Substances.molecular_formula == formula)
+    results = [r[0].get_row_contents() for r in db.session.execute(query).all()]
+    return results
+
+
 def ids_for_substances(dtxsids, record_type=None, additional_fields=[]):
     """
     Retrieves a list of record IDs that contain a given set of substances.
@@ -53,6 +62,15 @@ def ids_for_substances(dtxsids, record_type=None, additional_fields=[]):
     if record_type is not None:
         query = query.filter(RecordInfo.record_type==record_type)
     results = [c._asdict() for c in db.session.execute(query).all()]
+    return results
+
+
+def inchikey_first_block_search(first_block):
+    """
+    Locates all substances where the first block of the InChIKey matches the searched first block.
+    """
+    query = db.select(Substances).filter(Substances.jchem_inchikey.like(first_block+"%") | Substances.indigo_inchikey.like(first_block+"%"))
+    results = [r[0].get_row_contents() for r in db.session.execute(query).all()]
     return results
     
 
