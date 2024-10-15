@@ -14,4 +14,4 @@ jobs:
       run: |
            cd /data/watchtower/amos/container-results/amos-server
            ls -la
-           python email.py 
+           python3 email.py 
