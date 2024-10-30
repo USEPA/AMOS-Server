@@ -188,3 +188,14 @@ This is a list of information on some of the more prominent data sources that ap
 - fact_sheets: Number of fact sheets from the source.
 - methods: Number of methods from the source.
 - spectra: Number of spectra (of any type) from the source.  Includes spectra that are only external links.
+
+
+IR SPECTRA
+This table contains infrared spectra of various types.
+- internal_id: Same as elsewhere.
+- ir_type: More specific type of IR spectrum (e.g., FTIR, near-IR).
+- laser_frequency: Frequency of the laser used in the experiment.  Currently in wavenumbers.
+- first_x: First value for the horizontal axis, in units of wavenumbers.
+- last_x: Last value for the horizontal axis, in units of wavenumbers.
+- intensities: One-dimensional array of the intensities.  The length of this array is used to determine the spacing between points.
+- spectrum_metadata: JSON object containing other metadata associated with the spectrum.

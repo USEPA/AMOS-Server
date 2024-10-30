@@ -79,8 +79,6 @@ def mass_spectra_for_substances(dtxsid_list, additional_fields=[]):
     Takes a list of DTXSIDs and returns all mass spectra associated with those
     DTXSIDs.  Additional fields from the Contents, RecordInfo, and Spectrum
     tables can be added as needed.
-
-    TODO: change filter from data_type == "Spectrum" to "Mass Spectrum"
     """
     query = db.select(Contents.dtxsid, RecordInfo.internal_id, RecordInfo.description, MassSpectra.spectrum, *additional_fields).filter(
         (Contents.dtxsid.in_(dtxsid_list)) & (RecordInfo.data_type == "Mass Spectrum")

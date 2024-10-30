@@ -241,3 +241,15 @@ class DataSourceInfo(db.Model):
             "description": self.description, "url": self.url, "substances": self.substances,
             "fact_sheets": self.fact_sheets, "methods": self.methods, "spectra": self.spectra
         }
+
+
+class InfraredSpectra(db.Model):
+    __tablename__ = "infrared_spectra"
+    __table_args__ = {'schema': 'amos'}
+    internal_id = db.Column(db.TEXT, primary_key=True)
+    ir_type = db.Column(db.VARCHAR(16))
+    laser_frequency = db.Column(db.REAL)
+    first_x = db.Column(db.REAL)
+    last_x = db.Column(db.REAL)
+    intensities = db.Column(ARRAY(db.REAL, dimensions=1))
+    spectrum_metadata = db.Column(db.JSON)

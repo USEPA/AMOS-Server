@@ -13,8 +13,8 @@ from sqlalchemy import func, or_
 import common_queries as cq
 import spectrum
 from table_definitions import db, AnalyticalQC, ClassyFire, Contents, DataSourceInfo, FactSheets, \
-    FunctionalUseClasses, Methods, MethodsWithSpectra, RecordInfo, MassSpectra, NMRSpectra, \
-    SubstanceImages, Substances, SpectrumPDFs, Synonyms
+    FunctionalUseClasses, InfraredSpectra, MassSpectra, Methods, MethodsWithSpectra, NMRSpectra, \
+    RecordInfo, SubstanceImages, Substances, SpectrumPDFs, Synonyms
 import util
 
 import sentry_sdk
@@ -535,7 +535,7 @@ def get_similar_structures(dtxsid):
         "method_results":method_results, "fact_sheet_results": fact_sheet_results,
         "ids_to_method_names":ids_to_method_names, "ids_to_fact_sheet_names": ids_to_fact_sheet_names,
         "dtxsid_counts":dtxsid_counts
-        })
+    })
 
 
 @app.post("/batch_search")
@@ -591,6 +591,8 @@ def batch_search():
                 records[i]["AMOS Link"] = f"{base_url}/view_spectrum_pdf/{r['internal_id']}"
             elif r["data_type"] == "NMR Spectrum":
                 records[i]["AMOS Link"] = f"{base_url}/view_nmr_spectrum/{r['internal_id']}"
+            elif r["data_type"] == "IR Spectrum":
+                records[i]["AMOS Link"] = f"{base_url}/view_ir_spectrum/{r['internal_id']}"
         elif r["record_type"] == "Fact Sheet":
             records[i]["AMOS Link"] = f"{base_url}/view_fact_sheet/{r['internal_id']}"
         elif r["record_type"] == "Method":
@@ -887,12 +889,6 @@ def max_similarity_by_dtxsid():
 
     # get the list of spectra in the database for the given substances
     results = cq.mass_spectra_for_substances(dtxsids)
-
-    """substance_dict = {d:None for d in dtxsids}
-    for r in results:
-        similarity = spectrum.calculate_entropy_similarity(user_spectrum, r["spectrum"], da_error=da, ppm_error=ppm)
-        if substance_dict[r["dtxsid"]] is None or substance_dict[r["dtxsid"]] < similarity:
-            substance_dict[r["dtxsid"]] = similarity"""
     
     substance_dict = {d: [None]*len(user_spectra) for d in dtxsids}
     for i, us in enumerate(user_spectra):
@@ -1039,7 +1035,7 @@ def substring_search(substring):
         il["fact_sheets"] = records.get("Fact Sheet", 0)
         il["spectra"] = records.get("Spectrum", 0)
 
-    return jsonify({"info_list": info_list})
+    return jsonify({"substances": info_list})
 
 
 @app.route("/get_ms_ready_methods/<inchikey>")
@@ -1253,8 +1249,34 @@ def dtxsids_for_functional_use(functional_use):
 
 @app.route("/formula_search/<formula>")
 def formula_search(formula):
-    results = cq.formula_search(formula)
-    return jsonify({"substances": results})
+    substances = cq.formula_search(formula)
+    dtxsids = [s["dtxsid"] for s in substances]
+    record_counts = cq.record_counts_by_dtxsid(dtxsids)
+    full_info = util.merge_substance_info_and_counts(substances, record_counts)
+    return jsonify({"substances": full_info})
+
+
+@app.route("/inchikey_first_block_search/<first_block>")
+def inchikey_first_block_search(first_block):
+    substances = cq.inchikey_first_block_search(first_block)
+    dtxsids = [s["dtxsid"] for s in substances]
+    record_counts = cq.record_counts_by_dtxsid(dtxsids)
+    full_info = util.merge_substance_info_and_counts(substances, record_counts)
+    return jsonify({"substances": full_info})
+
+
+@app.route("/get_ir_spectrum/<internal_id>")
+def get_ir_spectrum(internal_id):
+    q = db.select(
+            InfraredSpectra.first_x, InfraredSpectra.intensities, InfraredSpectra.ir_type,
+            InfraredSpectra.laser_frequency, InfraredSpectra.last_x, InfraredSpectra.spectrum_metadata
+        ).filter(InfraredSpectra.internal_id==internal_id)
+    data_row = db.session.execute(q).first()
+    if data_row is not None:
+        data_dict = data_row._asdict()
+        return jsonify(data_dict)
+    else:
+        return "Error: invalid internal id."
 
 
 

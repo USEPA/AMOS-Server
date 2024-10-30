@@ -1,3 +1,4 @@
+from copy import deepcopy
 import csv
 import io
 import re
@@ -61,3 +62,22 @@ def make_excel_file(df_dict):
             df.to_excel(writer, sheet_name=sheet_name, index=None)
     
     return buffer.getvalue()
+
+
+def merge_substance_info_and_counts(substance_info, count_info):
+    """
+    Combines the information from a list of identifiers for a substance with a
+    list of record counts in the database for that substance.
+
+    Assumes that there are elements in the count_info dictionary named 'Fact
+    Sheet', 'Method', and 'Spectrum', and that both dictionaries have a
+    'dtxsid' field to link between the two.
+    """
+
+    all_info = deepcopy(substance_info)
+    for substance in all_info:
+        records = count_info[substance["dtxsid"]]
+        substance["methods"] = records.get("Method", 0)
+        substance["fact_sheets"] = records.get("Fact Sheet", 0)
+        substance["spectra"] = records.get("Spectrum", 0)
+    return all_info
