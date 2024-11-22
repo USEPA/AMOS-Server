@@ -47,7 +47,7 @@ def database_summary():
 
 def formula_search(formula):
     """
-    Search
+    Returns a list of substances which exactly match the given molecular formula.
     """
     query = db.select(Substances).filter(Substances.molecular_formula == formula)
     results = [r[0].get_row_contents() for r in db.session.execute(query).all()]
@@ -72,9 +72,19 @@ def inchikey_first_block_search(first_block):
     query = db.select(Substances).filter(Substances.jchem_inchikey.like(first_block+"%") | Substances.indigo_inchikey.like(first_block+"%"))
     results = [r[0].get_row_contents() for r in db.session.execute(query).all()]
     return results
+
+
+def mass_range_search(lower_mass_limit, upper_mass_limit):
+    """
+    Returns a list of substances whose monoisotopic mass is in the specified range.
+    """
+    query = db.select(Substances).filter(Substances.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit))
+    results = [r[0].get_row_contents() for r in db.session.execute(query).all()]
+    return results
+
     
 
-def mass_spectra_for_substances(dtxsid_list, additional_fields=[]):
+def mass_spectra_for_substances(dtxsid_list, ms_level=None, additional_fields=[]):
     """
     Takes a list of DTXSIDs and returns all mass spectra associated with those
     DTXSIDs.  Additional fields from the Contents, RecordInfo, and Spectrum
@@ -87,6 +97,8 @@ def mass_spectra_for_substances(dtxsid_list, additional_fields=[]):
     ).join_from(
         Contents, MassSpectra, Contents.internal_id==MassSpectra.internal_id
     )
+    if ms_level is not None:
+        query = query.filter(MassSpectra.ms_level==ms_level)
     return [c._asdict() for c in db.session.execute(query).all()]
 
 

@@ -886,9 +886,12 @@ def max_similarity_by_dtxsid():
 
     da = request_json.get("da_window")
     ppm = request_json.get("ppm_window")
+    ms_level = request_json.get("ms_level")
+    if type(ms_level) != int:
+        ms_level = None
 
     # get the list of spectra in the database for the given substances
-    results = cq.mass_spectra_for_substances(dtxsids)
+    results = cq.mass_spectra_for_substances(dtxsids, ms_level=ms_level)
     
     substance_dict = {d: [None]*len(user_spectra) for d in dtxsids}
     for i, us in enumerate(user_spectra):
@@ -1195,7 +1198,7 @@ def next_level_classification():
         else:
             query = db.select(ClassyFire.superklass).filter(ClassyFire.kingdom==kingdom).distinct().order_by(ClassyFire.superklass)
     else:
-        return jsonify({"error": "Somehow, no kingdom was passed."})
+        return jsonify({"error": "No kingdom was passed."})
     
     possible_values = [r[0] for r in db.session.execute(query)]
     return jsonify({"values": possible_values})
@@ -1277,6 +1280,18 @@ def get_ir_spectrum(internal_id):
         return jsonify(data_dict)
     else:
         return "Error: invalid internal id."
+
+
+@app.post("/mass_range_search/")
+def mass_range_search():
+    request_json = request.get_json()
+    lower_mass_limit = request_json["lower_mass_limit"]
+    upper_mass_limit = request_json["upper_mass_limit"]
+    substances = cq.mass_range_search(lower_mass_limit, upper_mass_limit)
+    dtxsids = [s["dtxsid"] for s in substances]
+    record_counts = cq.record_counts_by_dtxsid(dtxsids)
+    full_info = util.merge_substance_info_and_counts(substances, record_counts)
+    return jsonify({"substances": full_info})
 
 
 
