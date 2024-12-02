@@ -1,5 +1,6 @@
 from collections import defaultdict
 
+import requests
 from sqlalchemy import func
 
 from table_definitions import db, AdditionalSources, AnalyticalQC, ClassyFire, \
@@ -18,6 +19,21 @@ def additional_sources_by_substance(dtxsid):
     return [c[0].get_row_contents() for c in db.session.execute(query).all()]
 
 
+def additional_data_counts(dtxsids, api_key):
+    """
+    Pulls additional count data from a CCTE API.
+    """
+    BASE_URL = "https://api-ccte-stg.epa.gov/chemical/extra-data/search/by-dtxsid/"
+    all_counts = {}
+    for dtxsid in dtxsids:
+        response = requests.get(f"{BASE_URL}{dtxsid}", headers={
+            'x-api-key': api_key, 'accept': 'application/json', 'content-type': 'application/json'
+        })
+        all_counts[dtxsid] = {k: v if v else 0 for k,v in response.json()[0].items() if k not in ["dtxsid", "dtxcid"]}
+    return all_counts
+    
+
+
 def classyfire_for_dtxsid(dtxsid, full_info=False):
     """
     Retrieves ClassyFire's classification info a given DTXSID.  By default this
@@ -34,7 +50,6 @@ def classyfire_for_dtxsid(dtxsid, full_info=False):
         return data_row._asdict()
     else:
         return None
-
 
 
 def database_summary():
@@ -82,7 +97,6 @@ def mass_range_search(lower_mass_limit, upper_mass_limit):
     results = [r[0].get_row_contents() for r in db.session.execute(query).all()]
     return results
 
-    
 
 def mass_spectra_for_substances(dtxsid_list, ms_level=None, additional_fields=[]):
     """
@@ -205,6 +219,14 @@ def record_counts_by_dtxsid(dtxsid_list):
     for r in results:
         result_dict[r["dtxsid"]].update({r["record_type"]: r["count"]})
     return result_dict
+
+
+def substance_counts_by_record(internal_id_list):
+    """
+    Gets counts of the number of substances in a list of internal IDs.
+    """
+    query = db.select(Contents.internal_id, func.count(Contents.dtxsid)).filter(Contents.internal_id.in_(internal_id_list)).group_by(Contents.internal_id)
+    return [c._asdict() for c in db.session.execute(query).all()]
 
 
 def substances_for_ids(internal_ids, additional_fields=[]):

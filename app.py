@@ -33,9 +33,10 @@ sentry_sdk.init(
     traces_sample_rate=1.0
 )
 
-# load info for PostgreSQL access
+# load info for PostgreSQL & API access
 uname = os.environ['AMOS_POSTGRES_USER']
 pwd = os.environ['AMOS_POSTGRES_PASSWORD']
+ccte_api_key = os.environ['CCTE_API_KEY']
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@ccte-pgsql-stg.epa.gov:5432/dev_poc"
@@ -195,6 +196,7 @@ def search_results(dtxsid):
     method_info = [r._asdict() for r in db.session.execute(method_number_query)]
     method_info = {mn["internal_id"]: {"method_number": mn["method_number"], "document_type": mn["document_type"]} for mn in method_info}
 
+    # add mass spectrum entropies to data
     spectrum_data_query = db.select(MassSpectra.internal_id, MassSpectra.spectral_entropy, MassSpectra.normalized_entropy).filter(MassSpectra.internal_id.in_(internal_ids))
     spectrum_info = [r._asdict() for r in db.session.execute(spectrum_data_query)]
     spectrum_info = {si["internal_id"]: {"spectral_entropy": si["spectral_entropy"], "normalized_entropy": si["normalized_entropy"]} for si in spectrum_info}
@@ -597,8 +599,17 @@ def batch_search():
             records[i]["AMOS Link"] = f"{base_url}/view_fact_sheet/{r['internal_id']}"
         elif r["record_type"] == "Method":
             records[i]["AMOS Link"] = f"{base_url}/view_method/{r['internal_id']}"
+
     record_df = pd.DataFrame(records)
     record_df.drop("data_type", axis=1, inplace=True)
+
+    
+    # add counts of substances per record
+    found_record_ids = set(record_df["internal_id"])
+    substances_per_record = cq.substance_counts_by_record(found_record_ids)
+    substances_per_record_df = pd.DataFrame(substances_per_record)
+    record_df = record_df.merge(substances_per_record_df, how="left", on="internal_id")
+    print(record_df.head())
 
     has_methodology = ~record_df["methodologies"].isna()
     record_df.loc[has_methodology, "methodologies"] = record_df.loc[has_methodology, "methodologies"].apply(lambda x: "; ".join(x))
@@ -606,11 +617,12 @@ def batch_search():
     result_df = substance_df.merge(record_df, how="right", on="dtxsid")
     result_df = result_df[[
         "dtxsid", "casrn", "preferred_name", "internal_id", "methodologies", "source", "record_type",
-        "AMOS Link", "link", "description"
+        "AMOS Link", "link", "count", "description"
     ]]
     result_df.rename({
         "dtxsid": "DTXSID", "casrn": "CASRN", "preferred_name": "Substance Name", "internal_id": "AMOS Record ID", "source": "Source",
-        "record_type": "Record Type", "description": "Description", "link": "Source Link", "methodologies": "Methodologies"
+        "record_type": "Record Type", "description": "Description", "link": "Source Link", "methodologies": "Methodologies",
+        "count": "# Substances in Record"
     }, axis=1, inplace=True)
 
     result_counts = record_df.groupby(["dtxsid"]).size().reset_index()
@@ -1137,7 +1149,8 @@ def retrieve_nmr_spectrum(internal_id):
     """
     q = db.select(
             NMRSpectra.intensities, NMRSpectra.first_x, NMRSpectra.last_x, NMRSpectra.x_units,
-            NMRSpectra.frequency, NMRSpectra.nucleus, NMRSpectra.temperature, NMRSpectra.solvent
+            NMRSpectra.frequency, NMRSpectra.nucleus, NMRSpectra.temperature, NMRSpectra.solvent,
+            NMRSpectra.spectrum_metadata
         ).filter(NMRSpectra.internal_id==internal_id)
     data_row = db.session.execute(q).first()
     if data_row is not None:
