@@ -10,13 +10,13 @@ RUN apt-get update \
 && apt-get install -y software-properties-common libpq-dev curl \
 && add-apt-repository ppa:deadsnakes/ppa \
 && apt-get update \
-&& apt-get install -y python3.12 python3.12-dev python3.12-distutils
+&& apt-get install -y python3.12 python3.12-dev
 
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
-COPY requirements.txt .
-
 RUN python3.12 -m pip install setuptools
+
+COPY requirements.txt .
 
 # Install dependencies
 RUN python3.12 -m pip install -r requirements.txt
