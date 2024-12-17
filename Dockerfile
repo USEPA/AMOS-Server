@@ -16,6 +16,8 @@ RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
 COPY requirements.txt .
 
+RUN python3.12 -m pip install setuptools
+
 # Install dependencies
 RUN python3.12 -m pip install -r requirements.txt
 
