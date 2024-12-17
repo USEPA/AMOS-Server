@@ -6,11 +6,11 @@ WORKDIR /app
 COPY . /app
 
 #Need python3.9 to run random forest using multicores...
-RUN apt-get update
-RUN apt-get install -y python3.9
-RUN apt-get install -y python3-pip
-RUN apt-get install -y python3-tk
-RUN apt-get install -y libpq-dev
+RUN apt-get update \
+&& apt-get install -y software-properties-common libpq-dev \
+&& add-apt-repository ppa:deadsnakes/ppa \
+&& apt-get update \
+&& apt install -y python3.12 python3.12-dev
 
 # Install pip
 #RUN echo Y  apt install python3-pip
