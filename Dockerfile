@@ -1,6 +1,8 @@
 # Import Docker image
 FROM ubuntu:20.04
 
+ARG DEBIAN_FRONTEND=noninteractive
+
 # Put source code in docker container
 WORKDIR /app
 COPY . /app
