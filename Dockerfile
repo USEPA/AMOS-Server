@@ -10,17 +10,15 @@ RUN apt-get update \
 && apt-get install -y software-properties-common libpq-dev \
 && add-apt-repository ppa:deadsnakes/ppa \
 && apt-get update \
-&& apt install -y python3.12 python3.12-dev python3.12-pip
-
-# Install pip
-#RUN echo Y  apt install python3-pip
+&& apt install -y python3.12 python3.12-dev
 
 COPY requirements.txt .
+
 # Install dependencies
-RUN pip install -r requirements.txt
+RUN python3.12 -m pip install -r requirements.txt
 
 # Expose port
 EXPOSE 5000
 
 # Run source code
-CMD ["../usr/bin/python3", "app.py"]
+CMD ["python3.12", "app.py"]
