@@ -7,7 +7,7 @@ COPY . /app
 
 #Need python3.9 to run random forest using multicores...
 RUN apt-get update \
-&& apt-get install -y software-properties-common libpq-dev \
+&& apt-get install -y software-properties-common libpq-dev curl \
 && add-apt-repository ppa:deadsnakes/ppa \
 && apt-get update \
 && apt install -y python3.12 python3.12-dev
