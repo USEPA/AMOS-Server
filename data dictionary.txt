@@ -199,3 +199,12 @@ This table contains infrared spectra of various types.
 - last_x: Last value for the horizontal axis, in units of wavenumbers.
 - intensities: One-dimensional array of the intensities.  The length of this array is used to determine the spacing between points.
 - spectrum_metadata: JSON object containing other metadata associated with the spectrum.
+
+
+ADDITIONAL SUBSTANCE INFO
+This table contains supplemental substance-level information that isn't related to identifiers or physical properties.
+- dtxsid: Same as elsewhere.
+- source_count: Number of other sources where information about the substance could be found.
+- patent_count: Number of patents that the substance appears in, based on a search of Google Patents.
+- literature_count: Number of other documents that the substance appears in.
+- pubmed_count: Number of sources that PubMed uses for the substance.

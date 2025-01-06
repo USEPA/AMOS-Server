@@ -108,7 +108,7 @@ def get_substances_for_search_term(search_term):
     q = db.select(Substances)
 
     if search_type == SearchType.DTXSID:
-        q = q.filter(Substances.dtxsid == search_term)
+        q = q.filter(Substances.dtxsid==search_term)
         results = db.session.execute(q).first()
         if results:
             substances = results[0].get_row_contents()
@@ -141,7 +141,7 @@ def get_substances_for_search_term(search_term):
             ambiguity = "inchikey"
     
     elif search_type == SearchType.CASRN:
-        q = q.filter(Substances.casrn == search_term)
+        q = q.filter(Substances.casrn==search_term)
         results = db.session.execute(q).first()
         if results:
             substances = results[0].get_row_contents()
@@ -176,7 +176,7 @@ def search_results(dtxsid):
     A JSON structure containing a list of records from the database.
     """
 
-    id_query = db.select(Contents.internal_id).filter(Contents.dtxsid == dtxsid)
+    id_query = db.select(Contents.internal_id).filter(Contents.dtxsid==dtxsid)
     internal_ids = [ir.internal_id for ir in db.session.execute(id_query).all()]
 
     record_query = db.select(
@@ -556,6 +556,8 @@ def batch_search():
     methodologies = parameters["methodologies"]
     record_types = parameters["record_types"]
     include_analyticalqc = parameters["include_analyticalqc"]
+    additional_record_info = parameters["additional_record_info"]
+    include_source_counts = parameters["include_source_counts"]
     
     substance_query = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsid_list))
     substances = [c._asdict() for c in db.session.execute(substance_query).all()]
@@ -583,22 +585,8 @@ def batch_search():
         # don't add this as a filter to the query; it'll miss records without sources if it's added there
         records = [r for r in records if r["data_type"] is not None]
     for i, r in enumerate(records):
-        # if a record has no link, have it link back AMOS's spectrum viewer;
-        # currently only spectra should be linkless, but this should be fixed to
-        # be a more general case in the future, just in case
-        if r["record_type"] == "Spectrum":
-            if r["data_type"] == "Mass Spectrum":
-                records[i]["AMOS Link"] = f"{base_url}/view_mass_spectrum/{r['internal_id']}"
-            elif r["data_type"] == "PDF":
-                records[i]["AMOS Link"] = f"{base_url}/view_spectrum_pdf/{r['internal_id']}"
-            elif r["data_type"] == "NMR Spectrum":
-                records[i]["AMOS Link"] = f"{base_url}/view_nmr_spectrum/{r['internal_id']}"
-            elif r["data_type"] == "IR Spectrum":
-                records[i]["AMOS Link"] = f"{base_url}/view_ir_spectrum/{r['internal_id']}"
-        elif r["record_type"] == "Fact Sheet":
-            records[i]["AMOS Link"] = f"{base_url}/view_fact_sheet/{r['internal_id']}"
-        elif r["record_type"] == "Method":
-            records[i]["AMOS Link"] = f"{base_url}/view_method/{r['internal_id']}"
+        if href := util.construct_internal_href(r['internal_id'], r['record_type'], r['data_type']):
+            records[i]["AMOS Link"] = base_url + href
 
     record_df = pd.DataFrame(records)
     record_df.drop("data_type", axis=1, inplace=True)
@@ -609,7 +597,6 @@ def batch_search():
     substances_per_record = cq.substance_counts_by_record(found_record_ids)
     substances_per_record_df = pd.DataFrame(substances_per_record)
     record_df = record_df.merge(substances_per_record_df, how="left", on="internal_id")
-    print(record_df.head())
 
     has_methodology = ~record_df["methodologies"].isna()
     record_df.loc[has_methodology, "methodologies"] = record_df.loc[has_methodology, "methodologies"].apply(lambda x: "; ".join(x))
@@ -619,16 +606,35 @@ def batch_search():
         "dtxsid", "casrn", "preferred_name", "internal_id", "methodologies", "source", "record_type",
         "AMOS Link", "link", "count", "description"
     ]]
-    result_df.rename({
-        "dtxsid": "DTXSID", "casrn": "CASRN", "preferred_name": "Substance Name", "internal_id": "AMOS Record ID", "source": "Source",
-        "record_type": "Record Type", "description": "Description", "link": "Source Link", "methodologies": "Methodologies",
-        "count": "# Substances in Record"
-    }, axis=1, inplace=True)
 
     result_counts = record_df.groupby(["dtxsid"]).size().reset_index()
     result_counts.columns = ["dtxsid", "num_records"]
     result_counts = pd.DataFrame({"dtxsid":dtxsid_list}).merge(substance_df, how="left", on="dtxsid").merge(result_counts, how="left", on="dtxsid")
     result_counts["num_records"] = result_counts["num_records"].fillna(0)
+
+    # add additional mass spectrum info, if requested
+    ms_info_flags = additional_record_info["ms"]
+    if any([v for _, v in ms_info_flags.items()]):
+        ms_info_query = db.select(
+                MassSpectra.internal_id, MassSpectra.spectral_entropy, MassSpectra.normalized_entropy, MassSpectra.spectrum_metadata,
+                func.array_length(MassSpectra.spectrum, 1).label("num_peaks")
+            ).filter(MassSpectra.internal_id.in_(found_record_ids))
+        ms_info = pd.DataFrame([c._asdict() for c in db.session.execute(ms_info_query).all()])
+        ms_info["rating"] = ms_info.apply(lambda x: spectrum.spectrum_rating(x.spectral_entropy, x.normalized_entropy), axis=1)
+        ms_info["ionization_mode"] = ms_info["spectrum_metadata"].apply(lambda x: x["Spectrometry"].get("Ion Mode") if x.get("Spectrometry") else None)
+
+        if ms_info_flags["all"]:
+            ms_info = ms_info[["internal_id", "ionization_mode", "rating", "spectral_entropy", "num_peaks"]]
+        else:
+            ms_info = ms_info[["internal_id"] + [k for k, v in ms_info_flags.items() if v]]
+        ms_info.rename({"ionization_mode": "Ionization Mode", "rating": "Spectrum Rating", "spectral_entropy": "Spectral Entropy", "num_peaks": "# Peaks"}, axis=1, inplace=True)
+        result_df = result_df.merge(ms_info, how="left", on="internal_id")
+    
+    result_df.rename({
+        "dtxsid": "DTXSID", "casrn": "CASRN", "preferred_name": "Substance Name", "internal_id": "AMOS Record ID", "source": "Source",
+        "record_type": "Record Type", "description": "Description", "link": "Source Link", "methodologies": "Methodologies",
+        "count": "# Substances in Record"
+    }, axis=1, inplace=True)
 
     # add more substance info, if appropriate
     if include_classyfire:
@@ -638,6 +644,14 @@ def batch_search():
         classyfire_results = [c._asdict() for c in db.session.execute(classyfire_query).all()]
         classyfire_df = pd.DataFrame(classyfire_results)
         result_counts = result_counts.merge(classyfire_df, how="left", on="dtxsid")
+
+    if include_source_counts:
+        source_counts = cq.additional_source_counts(dtxsid_list)
+        source_count_df = pd.DataFrame(source_counts)
+        source_count_df.rename({
+            "literature_count": "Articles", "patent_count": "Patents", "source_count": "Sources", "pubmed_count": "PubMed Record Count"
+        }, axis=1, inplace=True)
+        result_counts = result_counts.merge(source_count_df, how="left", on="dtxsid")
     
     if include_analyticalqc:
         analytical_qc_query = db.select(
@@ -669,6 +683,7 @@ def analytical_qc_batch_search():
     include_classyfire = parameters["include_classyfire"]
     methodologies = parameters["methodologies"]
     base_url = parameters["base_url"]
+    include_source_counts = parameters["include_source_counts"]
     
     substance_query = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsid_list))
     substances = [c._asdict() for c in db.session.execute(substance_query).all()]
@@ -678,7 +693,7 @@ def analytical_qc_batch_search():
             Contents.internal_id, Contents.dtxsid, RecordInfo.methodologies, RecordInfo.link, RecordInfo.description
         ).join_from(
             Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
-        ).filter(Contents.dtxsid.in_(dtxsid_list) & (RecordInfo.source == "Analytical QC"))
+        ).filter(Contents.dtxsid.in_(dtxsid_list) & (RecordInfo.source=="Analytical QC"))
     
     if not methodologies["all"]:
         accepted_methodologies = [k for k,v in methodologies.items() if (k != "all") and v]
@@ -707,6 +722,14 @@ def analytical_qc_batch_search():
         classyfire_results = [c._asdict() for c in db.session.execute(classyfire_query).all()]
         classyfire_df = pd.DataFrame(classyfire_results)
         result_counts = result_counts.merge(classyfire_df, how="left", on="dtxsid")
+    
+    if include_source_counts:
+        source_counts = cq.additional_source_counts(dtxsid_list)
+        source_count_df = pd.DataFrame(source_counts)
+        source_count_df.rename({
+            "literature_count": "Articles", "patent_count": "Patents", "source_count": "Sources", "pubmed_count": "PubMed Record Count"
+        }, axis=1, inplace=True)
+        result_counts = result_counts.merge(source_count_df, how="left", on="dtxsid")
     
     analytical_qc_query = db.select(
             AnalyticalQC.internal_id, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint, AnalyticalQC.stability_call, AnalyticalQC.timepoint
@@ -742,7 +765,7 @@ def method_with_spectra_search(search_type, internal_id):
     spectra.
     """
     if search_type == "spectrum":
-        q = db.select(MethodsWithSpectra.method_id).filter(MethodsWithSpectra.spectrum_id == internal_id)
+        q = db.select(MethodsWithSpectra.method_id).filter(MethodsWithSpectra.spectrum_id==internal_id)
         result = [c._asdict() for c in db.session.execute(q).all()]
         if len(result) == 0:
             return f"No method found that matches spectrum id '{internal_id}'."
@@ -752,7 +775,7 @@ def method_with_spectra_search(search_type, internal_id):
     else:
         return f"Invalid search type {search_type}."
     
-    spectrum_q = db.select(MethodsWithSpectra.spectrum_id).filter(MethodsWithSpectra.method_id == method_id)
+    spectrum_q = db.select(MethodsWithSpectra.spectrum_id).filter(MethodsWithSpectra.method_id==method_id)
     spectrum_list = [c.spectrum_id for c in db.session.execute(spectrum_q).all()]
 
     info_q = db.select(
@@ -786,7 +809,7 @@ def get_spectrum_count_for_methodology():
     spectrum_type = request.get_json()["spectrum_type"]
 
     q = db.select(Contents.internal_id).filter(
-            RecordInfo.methodologies.contains([spectrum_type]) & (RecordInfo.record_type == "Spectrum") & (Contents.dtxsid == dtxsid)
+            RecordInfo.methodologies.contains([spectrum_type]) & (RecordInfo.record_type=="Spectrum") & (Contents.dtxsid==dtxsid)
     ).join_from(Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id)
     return jsonify({"count": len(db.session.execute(q).all())})
 
@@ -840,7 +863,6 @@ def mass_spectrum_similarity_search():
         del r["preferred_name"]
         r["similarity"] = spectrum.calculate_entropy_similarity(r["spectrum"], user_spectrum)
     return jsonify({"result_length":len(results), "unique_substances":len(substance_mapping), "results":results, "substance_mapping": substance_mapping})
-
 
 
 @app.post("/spectral_entropy/")
@@ -965,7 +987,7 @@ def all_similarities_by_dtxsid():
 
 @app.route("/get_info_by_id/<internal_id>")
 def get_info_by_id(internal_id):
-    q = db.select(RecordInfo).filter(RecordInfo.internal_id == internal_id)
+    q = db.select(RecordInfo).filter(RecordInfo.internal_id==internal_id)
     result = db.session.execute(q).first()
     if result:
         return jsonify({"result": result[0].get_row_contents()})
@@ -1018,19 +1040,9 @@ def substring_search(substring):
     of substances, synonyms that matched the search (if any), and the
     record counts for each substance.
     """
-    preferred_name_query = db.select(
-            Substances.preferred_name, Substances.dtxsid, Substances.casrn, Substances.monoisotopic_mass, Substances.molecular_formula,
-            Substances.image_in_comptox
-        ).filter(Substances.preferred_name.ilike(f"%{substring}%"))
-    synonym_query = db.select(
-            Synonyms.synonym, Synonyms.dtxsid, Substances.preferred_name, Substances.casrn, Substances.monoisotopic_mass,
-            Substances.molecular_formula, Substances.image_in_comptox
-        ).join_from(
-            Synonyms, Substances, Synonyms.dtxsid==Substances.dtxsid
-        ).filter(Synonyms.synonym.ilike(f"%{substring}%"))
-    preferred_names = [r._asdict() for r in db.session.execute(preferred_name_query).all()]
-    synonyms = [r._asdict() for r in db.session.execute(synonym_query).all()]
 
+    preferred_names, synonyms = cq.substring_search(substring)
+    
     info_dict = {}
     for pn in preferred_names:
         info_dict[pn["dtxsid"]] = {"synonyms": [], **pn}
@@ -1044,13 +1056,9 @@ def substring_search(substring):
 
     dtxsids = [il["dtxsid"] for il in info_list]
     record_counts = cq.record_counts_by_dtxsid(dtxsids)
-    for il in info_list:
-        records = record_counts[il["dtxsid"]]
-        il["methods"] = records.get("Method", 0)
-        il["fact_sheets"] = records.get("Fact Sheet", 0)
-        il["spectra"] = records.get("Spectrum", 0)
+    full_info = util.merge_substance_info_and_counts(info_list, record_counts)
 
-    return jsonify({"substances": info_list})
+    return jsonify({"substances": full_info})
 
 
 @app.route("/get_ms_ready_methods/<inchikey>")
@@ -1068,9 +1076,9 @@ def get_ms_ready_methods(inchikey):
         ).filter(
             Substances.jchem_inchikey.like(first_block+"%") & (Substances.jchem_inchikey != inchikey)
         ).join_from(
-            Contents, Substances, Contents.dtxsid == Substances.dtxsid
+            Contents, Substances, Contents.dtxsid==Substances.dtxsid
         ).join_from(
-            Contents, RecordInfo, Contents.internal_id == RecordInfo.internal_id
+            Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
         ).group_by(
             RecordInfo.internal_id
         )
@@ -1115,9 +1123,9 @@ def analytical_qc_list():
         AnalyticalQC.stability_call, AnalyticalQC.annotation, AnalyticalQC.study, AnalyticalQC.sample_id,
         AnalyticalQC.lcms_amen_pos_true, AnalyticalQC.lcms_amen_neg_true, AnalyticalQC.flags
     ).join_from(
-        AnalyticalQC, Contents, AnalyticalQC.internal_id == Contents.internal_id
+        AnalyticalQC, Contents, AnalyticalQC.internal_id==Contents.internal_id
     ).join_from(
-        Contents, Substances, Contents.dtxsid == Substances.dtxsid
+        Contents, Substances, Contents.dtxsid==Substances.dtxsid
     )
     results = [c._asdict() for c in db.session.execute(q).all()]
     return jsonify({"results": results})

@@ -32,6 +32,9 @@ class Synonyms(db.Model):
     synonym = db.Column(db.TEXT, primary_key=True)
     dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
 
+    def get_row_contents(self):
+        return {"dtxsid": self.dtxsid, "synonym": self.synonym}
+
 class Contents(db.Model):
     __tablename__ = "contents"
     __table_args__ = {'schema': 'amos'}
@@ -253,3 +256,19 @@ class InfraredSpectra(db.Model):
     last_x = db.Column(db.REAL)
     intensities = db.Column(ARRAY(db.REAL, dimensions=1))
     spectrum_metadata = db.Column(db.JSON)
+
+
+class AdditionalSubstanceInfo(db.Model):
+    __tablename__ = "additional_substance_info"
+    __table_args__ = {'schema': 'amos'}
+    dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
+    source_count = db.Column(db.INTEGER)
+    patent_count = db.Column(db.INTEGER)
+    literature_count = db.Column(db.INTEGER)
+    pubmed_count = db.Column(db.INTEGER)
+
+    def get_row_contents(self):
+        return {
+            "dtxsid": self.dtxsid, "source_count": self.source_count, "patent_count": self.patent_count,
+            "literature_count": self.literature_count, "pubmed_count": self.pubmed_count 
+        }

@@ -38,6 +38,29 @@ def clean_year(year_value):
         return year_value
 
 
+def construct_internal_href(internal_id, record_type, data_type):
+    """
+    Constructs the href for the URL for an internal link to a record in AMOS.
+    """
+    if record_type == "Spectrum":
+        if data_type == "Mass Spectrum":
+            return f"/view_mass_spectrum/{internal_id}"
+        elif data_type == "PDF":
+            return f"/view_spectrum_pdf/{internal_id}"
+        elif data_type == "NMR Spectrum":
+            return f"/view_nmr_spectrum/{internal_id}"
+        elif data_type == "IR Spectrum":
+            return f"/view_ir_spectrum/{internal_id}"
+        else:
+            return None  # dunno what the best way to handle this is right now
+    elif record_type == "Fact Sheet":
+        return f"/view_fact_sheet/{internal_id}"
+    elif record_type == "Method":
+        return f"/view_method/{internal_id}"
+    else:
+        return None  # dunno what the best way to handle this is right now
+
+
 def make_csv_string(data_rows):
     """
     Takes a list of dictionaries of the same type and translates them into a

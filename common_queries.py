@@ -3,11 +3,30 @@ from collections import defaultdict
 import requests
 from sqlalchemy import func
 
-from table_definitions import db, AdditionalSources, AnalyticalQC, ClassyFire, \
+from table_definitions import db, AdditionalSources, AdditionalSubstanceInfo, AnalyticalQC, ClassyFire, \
     Contents, DatabaseSummary, FactSheets, MassSpectra, Methods, \
     MethodsWithSpectra, RecordInfo, SpectrumPDFs, SubstanceImages, Substances, \
     Synonyms
 
+
+EMPTY_ADDITIONAL_INFO_ROW = {"literature_count": 0, "patent_count": 0, "pubmed_count": 0}
+PARTIAL_IDENTIFIER_SEARCH_FIELDS = [
+    Substances.image_in_comptox, Substances.dtxsid, Substances.casrn, Substances.monoisotopic_mass,
+    Substances.molecular_formula, Substances.preferred_name, AdditionalSubstanceInfo.pubmed_count,
+    AdditionalSubstanceInfo.literature_count, AdditionalSubstanceInfo.patent_count
+]
+
+
+def additional_source_counts(dtxsids):
+    """
+    Pulls additional count data for a list of DTXSIDs.
+    """
+    query = db.select(AdditionalSubstanceInfo).filter(AdditionalSubstanceInfo.dtxsid.in_(dtxsids))
+    results = [c[0].get_row_contents() for c in db.session.execute(query).all()]
+
+    seen_dtxsids = set([r["dtxsid"] for r in results])
+    missing_dtxsid_info = [{"dtxsid": d, "literature_count": 0, "patent_count": 0, "pubmed_count": 0, "source_count": 0} for d in dtxsids if d not in seen_dtxsids]
+    return results + missing_dtxsid_info
 
 
 def additional_sources_by_substance(dtxsid):
@@ -15,23 +34,8 @@ def additional_sources_by_substance(dtxsid):
     Retrieves links for supplemental sources (e.g., Wikipedia, ChemExpo) for a
     given DTXSID.
     """
-    query = db.select(AdditionalSources).filter(AdditionalSources.dtxsid == dtxsid)
+    query = db.select(AdditionalSources).filter(AdditionalSources.dtxsid==dtxsid)
     return [c[0].get_row_contents() for c in db.session.execute(query).all()]
-
-
-def additional_data_counts(dtxsids, api_key):
-    """
-    Pulls additional count data from a CCTE API.
-    """
-    BASE_URL = "https://api-ccte-stg.epa.gov/chemical/extra-data/search/by-dtxsid/"
-    all_counts = {}
-    for dtxsid in dtxsids:
-        response = requests.get(f"{BASE_URL}{dtxsid}", headers={
-            'x-api-key': api_key, 'accept': 'application/json', 'content-type': 'application/json'
-        })
-        all_counts[dtxsid] = {k: v if v else 0 for k,v in response.json()[0].items() if k not in ["dtxsid", "dtxcid"]}
-    return all_counts
-    
 
 
 def classyfire_for_dtxsid(dtxsid, full_info=False):
@@ -44,7 +48,7 @@ def classyfire_for_dtxsid(dtxsid, full_info=False):
     search_fields = [ClassyFire.kingdom, ClassyFire.superklass, ClassyFire.klass, ClassyFire.subklass]
     if full_info:
         search_fields.extend([ClassyFire.direct_parent, ClassyFire.geometric_descriptor, ClassyFire.alternative_parents, ClassyFire.substituents])
-    query = db.select(*search_fields).filter(ClassyFire.dtxsid == dtxsid)
+    query = db.select(*search_fields).filter(ClassyFire.dtxsid==dtxsid)
     data_row = db.session.execute(query).first()
     if data_row is not None:
         return data_row._asdict()
@@ -64,8 +68,8 @@ def formula_search(formula):
     """
     Returns a list of substances which exactly match the given molecular formula.
     """
-    query = db.select(Substances).filter(Substances.molecular_formula == formula)
-    results = [r[0].get_row_contents() for r in db.session.execute(query).all()]
+    query = db.select(Substances, AdditionalSubstanceInfo).join_from(Substances, AdditionalSubstanceInfo, Substances.dtxsid==AdditionalSubstanceInfo.dtxsid, isouter=True).filter(Substances.molecular_formula==formula)
+    results = [r[0].get_row_contents() | (r[1].get_row_contents() if r[1] else EMPTY_ADDITIONAL_INFO_ROW) for r in db.session.execute(query).all()]
     return results
 
 
@@ -84,8 +88,8 @@ def inchikey_first_block_search(first_block):
     """
     Locates all substances where the first block of the InChIKey matches the searched first block.
     """
-    query = db.select(Substances).filter(Substances.jchem_inchikey.like(first_block+"%") | Substances.indigo_inchikey.like(first_block+"%"))
-    results = [r[0].get_row_contents() for r in db.session.execute(query).all()]
+    query = db.select(Substances, AdditionalSubstanceInfo).join_from(Substances, AdditionalSubstanceInfo, Substances.dtxsid==AdditionalSubstanceInfo.dtxsid, isouter=True).filter(Substances.jchem_inchikey.like(first_block+"%") | Substances.indigo_inchikey.like(first_block+"%"))
+    results = [r[0].get_row_contents() | (r[1].get_row_contents() if r[1] else EMPTY_ADDITIONAL_INFO_ROW) for r in db.session.execute(query).all()]
     return results
 
 
@@ -93,8 +97,8 @@ def mass_range_search(lower_mass_limit, upper_mass_limit):
     """
     Returns a list of substances whose monoisotopic mass is in the specified range.
     """
-    query = db.select(Substances).filter(Substances.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit))
-    results = [r[0].get_row_contents() for r in db.session.execute(query).all()]
+    query = db.select(Substances, AdditionalSubstanceInfo).join_from(Substances, AdditionalSubstanceInfo, Substances.dtxsid==AdditionalSubstanceInfo.dtxsid, isouter=True).filter(Substances.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit))
+    results = [r[0].get_row_contents() | (r[1].get_row_contents() if r[1] else EMPTY_ADDITIONAL_INFO_ROW) for r in db.session.execute(query).all()]
     return results
 
 
@@ -105,7 +109,7 @@ def mass_spectra_for_substances(dtxsid_list, ms_level=None, additional_fields=[]
     tables can be added as needed.
     """
     query = db.select(Contents.dtxsid, RecordInfo.internal_id, RecordInfo.description, MassSpectra.spectrum, *additional_fields).filter(
-        (Contents.dtxsid.in_(dtxsid_list)) & (RecordInfo.data_type == "Mass Spectrum")
+        (Contents.dtxsid.in_(dtxsid_list)) & (RecordInfo.data_type=="Mass Spectrum")
     ).join_from(
         Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
     ).join_from(
@@ -127,7 +131,7 @@ def mass_spectrum_search(lower_mass_limit, upper_mass_limit, methodology=None):
         ).filter(
             Substances.monoisotopic_mass.between(lower_mass_limit, upper_mass_limit) & (RecordInfo.data_type=="Mass Spectrum")
         ).join_from(
-            Substances, Contents, Substances.dtxsid == Contents.dtxsid
+            Substances, Contents, Substances.dtxsid==Contents.dtxsid
         ).join_from(
             Contents, RecordInfo, Contents.internal_id==RecordInfo.internal_id
         ).join_from(
@@ -244,3 +248,16 @@ def substances_for_ids(internal_ids, additional_fields=[]):
         query = query.filter(Contents.internal_id.in_(internal_ids)).distinct()
     results = [c._asdict() for c in db.session.execute(query).all()]
     return results
+
+
+def substring_search(substring):
+    preferred_name_query = db.select(Substances, AdditionalSubstanceInfo).join_from(Substances, AdditionalSubstanceInfo, Substances.dtxsid==AdditionalSubstanceInfo.dtxsid, isouter=True).filter(Substances.preferred_name.ilike(f"%{substring}%"))
+    synonym_query = db.select(Synonyms, Substances, AdditionalSubstanceInfo).join_from(
+            Synonyms, Substances, Synonyms.dtxsid==Substances.dtxsid
+        ).join_from(
+            Substances, AdditionalSubstanceInfo, Substances.dtxsid==AdditionalSubstanceInfo.dtxsid, isouter=True
+        ).filter(Synonyms.synonym.ilike(f"%{substring}%"))
+    
+    preferred_names = [r[0].get_row_contents() | (r[1].get_row_contents() if r[1] else EMPTY_ADDITIONAL_INFO_ROW) for r in db.session.execute(preferred_name_query).all()]
+    synonyms = [r[0].get_row_contents() | r[1].get_row_contents() | (r[2].get_row_contents() if r[2] else EMPTY_ADDITIONAL_INFO_ROW) for r in db.session.execute(synonym_query).all()]
+    return preferred_names, synonyms
