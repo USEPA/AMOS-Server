@@ -162,15 +162,12 @@ class AnalyticalQC(db.Model):
 class DatabaseSummary(db.Model):
     __tablename__ = "database_summary"
     __table_args__ = {'schema': 'amos'}
-    count_type = db.Column(db.VARCHAR(32), primary_key=True)
-    subtype = db.Column(db.VARCHAR(32), primary_key=True)
-    value_count = db.Column(db.INTEGER)
+    field_name = db.Column(db.VARCHAR(32), primary_key=True)
+    info = db.Column(db.JSON)
 
     def get_row_contents(self):
-        return {
-            "count_type": self.count_type, "subtype": self.subtype,
-            "value_count": self.value_count
-        }
+        return {"field_name": self.field_name, "info": self.info}
+
 
 class AdditionalSources(db.Model):
     __tablename__ = "additional_sources"

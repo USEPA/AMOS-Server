@@ -859,9 +859,14 @@ def mass_spectrum_similarity_search():
 
     substance_mapping = {}
     for r in results:
-        substance_mapping[r["dtxsid"]] = r["preferred_name"]
+        if request_json["type"].lower() == "da":
+            r["similarity"] = spectrum.calculate_entropy_similarity(r["spectrum"], user_spectrum, da_error=request_json["window"])
+        else:
+            r["similarity"] = spectrum.calculate_entropy_similarity(r["spectrum"], user_spectrum, ppm_error=request_json["window"])
+        if r["similarity"] >= 0.1:
+            substance_mapping[r["dtxsid"]] = r["preferred_name"]
         del r["preferred_name"]
-        r["similarity"] = spectrum.calculate_entropy_similarity(r["spectrum"], user_spectrum)
+    results = [r for r in results if r["similarity"] >= 0.1]    # since the frontend will only ever show stuff with a similarity of at least 0.1
     return jsonify({"result_length":len(results), "unique_substances":len(substance_mapping), "results":results, "substance_mapping": substance_mapping})
 
 
@@ -880,7 +885,14 @@ def entropy_similarity():
     Calculates the entropy similarity for two spectra.
     """
     post_data = request.get_json()
-    similarity = spectrum.calculate_entropy_similarity(post_data["spectrum_1"], post_data["spectrum_2"])
+    print(post_data.get("type"))
+    if post_data.get("type") is None:
+        similarity = spectrum.calculate_entropy_similarity(post_data["spectrum_1"], post_data["spectrum_2"])
+    elif post_data["type"].lower() == "da":
+        print(post_data["window"])
+        similarity = spectrum.calculate_entropy_similarity(post_data["spectrum_1"], post_data["spectrum_2"], da_error=post_data["window"])
+    else:
+        similarity = spectrum.calculate_entropy_similarity(post_data["spectrum_1"], post_data["spectrum_2"], ppm_error=post_data["window"])
     return jsonify({"similarity": similarity})
 
 
@@ -998,10 +1010,7 @@ def get_info_by_id(internal_id):
 @app.route("/database_summary/")
 def database_summary():
     summary_info = cq.database_summary()
-    summary_dict = defaultdict(lambda: defaultdict(dict))
-    for row in summary_info:
-        summary_dict[row["count_type"]][row["subtype"]] = row["value_count"]
-    return jsonify({k: dict(v) for k,v in summary_dict.items()})
+    return jsonify(summary_info)
 
 
 @app.post("/mass_spectra_for_substances/")

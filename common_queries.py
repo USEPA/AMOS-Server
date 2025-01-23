@@ -61,7 +61,9 @@ def database_summary():
     Retrieves the information from the database summary table.
     """
     query = db.select(DatabaseSummary)
-    return [c[0].get_row_contents() for c in db.session.execute(query).all()]
+    results = [c[0].get_row_contents() for c in db.session.execute(query).all()]
+    result_dict = {r["field_name"]: r["info"] for r in results}
+    return result_dict
 
 
 def formula_search(formula):

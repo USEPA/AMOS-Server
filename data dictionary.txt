@@ -129,9 +129,8 @@ This table stores a collection of spectra-containing PDFs that are from the Anal
 
 DATABASE SUMMARY
 This table holds precalculated values regarding the contents of the database for use on the About page.  This table was put together to avoid having to recalculate these values from scratch every time the page is loaded, at the cost of needing to update these values whenever records are added to or removed from the database.  As a result, the contents of this table are a bit more haphazard than in other tables.
-- count_type: Part of the description of what's being counted in this row.  Usually either a record type, substance count, or source count.
-- subtype: The other part of the description.
-- value_count: The count of whatever's being described in the row.
+- field_name: Descriptor for the rough groups of data in the 'info' field.
+- info: JSON object containing information related to the field name.
 
 
 ADDITIONAL SOURCES
