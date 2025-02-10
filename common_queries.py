@@ -3,10 +3,10 @@ from collections import defaultdict
 import requests
 from sqlalchemy import func
 
-from table_definitions import db, AdditionalSources, AdditionalSubstanceInfo, AnalyticalQC, ClassyFire, \
-    Contents, DatabaseSummary, FactSheets, MassSpectra, Methods, \
-    MethodsWithSpectra, RecordInfo, SpectrumPDFs, SubstanceImages, Substances, \
-    Synonyms
+from table_definitions import db, AdditionalSources, AdditionalSubstanceInfo, \
+    AnalyticalQC, ClassyFire, Contents, DatabaseSummary, FactSheets, \
+    MassSpectra, Methods, MethodsWithSpectra, RecordInfo, SpectrumPDFs, \
+    SubstanceImages, Substances, Synonyms
 
 
 EMPTY_ADDITIONAL_INFO_ROW = {"literature_count": 0, "patent_count": 0, "pubmed_count": 0}

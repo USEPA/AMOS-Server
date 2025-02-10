@@ -17,15 +17,18 @@ class Substances(db.Model):
     molecular_formula = db.Column(db.TEXT)
     monoisotopic_mass = db.Column(db.REAL)
     image_in_comptox = db.Column(db.BOOLEAN)
+    smiles = db.Column(db.TEXT)
 
     def get_row_contents(self):
         return {
             "dtxsid": self.dtxsid, "dtxcid": self.dtxcid, "casrn": self.casrn,
-            "jchem_inchikey": self.jchem_inchikey, "indigo_inchikey":self.indigo_inchikey,
-            "preferred_name":self.preferred_name, "molecular_formula":self.molecular_formula,
-            "monoisotopic_mass":self.monoisotopic_mass, "image_in_comptox": self.image_in_comptox
+            "jchem_inchikey": self.jchem_inchikey, "indigo_inchikey": self.indigo_inchikey,
+            "preferred_name":self.preferred_name, "molecular_formula": self.molecular_formula,
+            "monoisotopic_mass": self.monoisotopic_mass, "image_in_comptox": self.image_in_comptox,
+            "smiles": self.smiles
         }
-    
+
+
 class Synonyms(db.Model):
     __tablename__ = "synonyms"
     __table_args__ = {'schema': 'amos'}
@@ -34,6 +37,7 @@ class Synonyms(db.Model):
 
     def get_row_contents(self):
         return {"dtxsid": self.dtxsid, "synonym": self.synonym}
+
 
 class Contents(db.Model):
     __tablename__ = "contents"
