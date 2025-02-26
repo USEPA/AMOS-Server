@@ -51,7 +51,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
           
       - name: Use the Upload Artifact GitHub Action
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with: 
           name: amos-server-container-scan-report
           path: output
@@ -60,7 +60,7 @@ jobs:
         run: rm -rf /data/watchtower/amos/container-results/amos-server/amos-server-report.html
    
       - name: download artifacts to the computer    
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: amos-server-container-scan-report
           path: /data/watchtower/amos/container-results/amos-server
