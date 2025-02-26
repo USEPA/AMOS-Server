@@ -317,7 +317,7 @@ def method_list():
     
     q = db.select(
         Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix, Methods.analyte,
-        Methods.chemical_class, Methods.pdf_metadata, RecordInfo.source, RecordInfo.methodologies, RecordInfo.description,
+        Methods.functional_classes, Methods.pdf_metadata, RecordInfo.source, RecordInfo.methodologies, RecordInfo.description,
         RecordInfo.link, Methods.document_type, Methods.publisher, func.count(Contents.dtxsid)
     ).join_from(
         Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id
@@ -555,13 +555,15 @@ def batch_search():
     include_external_links = parameters["include_external_links"]
     methodologies = parameters["methodologies"]
     record_types = parameters["record_types"]
-    include_analyticalqc = parameters["include_analyticalqc"]
     additional_record_info = parameters["additional_record_info"]
     include_source_counts = parameters["include_source_counts"]
+    include_functional_uses = parameters["include_functional_uses"]
+    always_download_file = parameters["always_download_file"]
+
+    #### PART 1: Fire off the initial queries to the database for record counts. ####
     
     substance_query = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsid_list))
-    substances = [c._asdict() for c in db.session.execute(substance_query).all()]
-    substance_df = pd.DataFrame(substances)
+    substance_df = pd.DataFrame([c._asdict() for c in db.session.execute(substance_query).all()])
 
     record_query = db.select(
             Contents.internal_id, Contents.dtxsid, RecordInfo.methodologies, RecordInfo.source, RecordInfo.link,
@@ -576,10 +578,7 @@ def batch_search():
     
     accepted_record_types = [k for k,v in record_types.items() if (k != "all") and v]
     record_query = record_query.filter(RecordInfo.record_type.in_(accepted_record_types))
-
     records = [c._asdict() for c in db.session.execute(record_query).all()]
-    if len(records) == 0:
-        return Response(status=204)
 
     if not include_external_links:
         # don't add this as a filter to the query; it'll miss records without sources if it's added there
@@ -588,53 +587,68 @@ def batch_search():
         if href := util.construct_internal_href(r['internal_id'], r['record_type'], r['data_type']):
             records[i]["AMOS Link"] = base_url + href
 
-    record_df = pd.DataFrame(records)
-    record_df.drop("data_type", axis=1, inplace=True)
+    #### PART 2: Construct the dataframe for the record info, if there are records to get info for. ####
 
+    if len(records) == 0:
+        if always_download_file:
+            record_df = pd.DataFrame([], columns=[
+                "dtxsid", "casrn", "preferred_name", "internal_id", "methodologies", "source",
+                "record_type", "AMOS Link", "link", "count", "description"
+            ])
+            result_df = pd.DataFrame([], columns=[
+                "DTXSID", "CASRN", "Substance Name", "AMOS Record ID", "Methodologies", "Source",
+                "Record Type", "AMOS Link", "Source Link", "# Substances in Record", "Description"
+            ])
+        else:
+            return Response(status=204)
+    else:
+        record_df = pd.DataFrame(records)
+        record_df.drop("data_type", axis=1, inplace=True)
+
+        # add counts of substances per record
+        found_record_ids = set(record_df["internal_id"])
+        substances_per_record = cq.substance_counts_by_record(found_record_ids)
+        substances_per_record_df = pd.DataFrame(substances_per_record)
+        record_df = record_df.merge(substances_per_record_df, how="left", on="internal_id")
+
+        # render methodologies as a delimited string rather than printing the list object
+        has_methodology = ~record_df["methodologies"].isna()
+        record_df.loc[has_methodology, "methodologies"] = record_df.loc[has_methodology, "methodologies"].apply(lambda x: "; ".join(x))
+
+        result_df = substance_df.merge(record_df, how="right", on="dtxsid")
+        result_df = result_df[[
+            "dtxsid", "casrn", "preferred_name", "internal_id", "methodologies", "source", "record_type",
+            "AMOS Link", "link", "count", "description"
+        ]]
+
+        # add additional mass spectrum info, if requested
+        ms_info_flags = additional_record_info["ms"]
+        if any([v for _, v in ms_info_flags.items()]):
+            ms_info_query = db.select(
+                    MassSpectra.internal_id, MassSpectra.spectral_entropy, MassSpectra.normalized_entropy, MassSpectra.spectrum_metadata,
+                    func.array_length(MassSpectra.spectrum, 1).label("num_peaks")
+                ).filter(MassSpectra.internal_id.in_(found_record_ids))
+            ms_info = pd.DataFrame([c._asdict() for c in db.session.execute(ms_info_query).all()])
+            ms_info["rating"] = ms_info.apply(lambda x: spectrum.spectrum_rating(x.spectral_entropy, x.normalized_entropy), axis=1)
+            ms_info["ionization_mode"] = ms_info["spectrum_metadata"].apply(lambda x: x["Spectrometry"].get("Ion Mode") if x.get("Spectrometry") else None)
+
+            if ms_info_flags["all"]:
+                ms_info = ms_info[["internal_id", "ionization_mode", "rating", "spectral_entropy", "num_peaks"]]
+            else:
+                ms_info = ms_info[["internal_id"] + [k for k, v in ms_info_flags.items() if v]]
+            ms_info.rename({"ionization_mode": "Ionization Mode", "rating": "Spectrum Rating", "spectral_entropy": "Spectral Entropy", "num_peaks": "# Peaks"}, axis=1, inplace=True)
+            result_df = result_df.merge(ms_info, how="left", on="internal_id")
     
-    # add counts of substances per record
-    found_record_ids = set(record_df["internal_id"])
-    substances_per_record = cq.substance_counts_by_record(found_record_ids)
-    substances_per_record_df = pd.DataFrame(substances_per_record)
-    record_df = record_df.merge(substances_per_record_df, how="left", on="internal_id")
-
-    has_methodology = ~record_df["methodologies"].isna()
-    record_df.loc[has_methodology, "methodologies"] = record_df.loc[has_methodology, "methodologies"].apply(lambda x: "; ".join(x))
-
-    result_df = substance_df.merge(record_df, how="right", on="dtxsid")
-    result_df = result_df[[
-        "dtxsid", "casrn", "preferred_name", "internal_id", "methodologies", "source", "record_type",
-        "AMOS Link", "link", "count", "description"
-    ]]
+        result_df.rename({
+            "dtxsid": "DTXSID", "casrn": "CASRN", "preferred_name": "Substance Name", "internal_id": "AMOS Record ID", "source": "Source",
+            "record_type": "Record Type", "description": "Description", "link": "Source Link", "methodologies": "Methodologies",
+            "count": "# Substances in Record"
+        }, axis=1, inplace=True)
 
     result_counts = record_df.groupby(["dtxsid"]).size().reset_index()
     result_counts.columns = ["dtxsid", "num_records"]
     result_counts = pd.DataFrame({"dtxsid":dtxsid_list}).merge(substance_df, how="left", on="dtxsid").merge(result_counts, how="left", on="dtxsid")
     result_counts["num_records"] = result_counts["num_records"].fillna(0)
-
-    # add additional mass spectrum info, if requested
-    ms_info_flags = additional_record_info["ms"]
-    if any([v for _, v in ms_info_flags.items()]):
-        ms_info_query = db.select(
-                MassSpectra.internal_id, MassSpectra.spectral_entropy, MassSpectra.normalized_entropy, MassSpectra.spectrum_metadata,
-                func.array_length(MassSpectra.spectrum, 1).label("num_peaks")
-            ).filter(MassSpectra.internal_id.in_(found_record_ids))
-        ms_info = pd.DataFrame([c._asdict() for c in db.session.execute(ms_info_query).all()])
-        ms_info["rating"] = ms_info.apply(lambda x: spectrum.spectrum_rating(x.spectral_entropy, x.normalized_entropy), axis=1)
-        ms_info["ionization_mode"] = ms_info["spectrum_metadata"].apply(lambda x: x["Spectrometry"].get("Ion Mode") if x.get("Spectrometry") else None)
-
-        if ms_info_flags["all"]:
-            ms_info = ms_info[["internal_id", "ionization_mode", "rating", "spectral_entropy", "num_peaks"]]
-        else:
-            ms_info = ms_info[["internal_id"] + [k for k, v in ms_info_flags.items() if v]]
-        ms_info.rename({"ionization_mode": "Ionization Mode", "rating": "Spectrum Rating", "spectral_entropy": "Spectral Entropy", "num_peaks": "# Peaks"}, axis=1, inplace=True)
-        result_df = result_df.merge(ms_info, how="left", on="internal_id")
-    
-    result_df.rename({
-        "dtxsid": "DTXSID", "casrn": "CASRN", "preferred_name": "Substance Name", "internal_id": "AMOS Record ID", "source": "Source",
-        "record_type": "Record Type", "description": "Description", "link": "Source Link", "methodologies": "Methodologies",
-        "count": "# Substances in Record"
-    }, axis=1, inplace=True)
 
     # add more substance info, if appropriate
     if include_classyfire:
@@ -653,14 +667,10 @@ def batch_search():
         }, axis=1, inplace=True)
         result_counts = result_counts.merge(source_count_df, how="left", on="dtxsid")
     
-    if include_analyticalqc:
-        analytical_qc_query = db.select(
-                AnalyticalQC.internal_id, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint, AnalyticalQC.stability_call, AnalyticalQC.timepoint,
-                AnalyticalQC.lcms_amen_pos_true, AnalyticalQC.lcms_amen_neg_true
-            ).join_from(AnalyticalQC, Contents, AnalyticalQC.internal_id==Contents.internal_id).filter(Contents.dtxsid.in_(dtxsid_list))
-        analytical_qc_results = [c._asdict() for c in db.session.execute(analytical_qc_query).all()]
-        analytical_qc_df = pd.DataFrame(analytical_qc_results)
-        result_df = result_df.merge(analytical_qc_df, how="left", on="internal_id")
+    if include_functional_uses:
+        functional_use_classes = cq.functional_uses_for_dtxsids(dtxsid_list)
+        functional_use_df = pd.DataFrame([(k,"; ".join(v) if v else None) for k,v in functional_use_classes.items()], columns=["dtxsid", "Functional Use Classes"])
+        result_counts = result_counts.merge(functional_use_df, how="left", on="dtxsid")
     
     result_counts.rename({
         "dtxsid": "DTXSID", "casrn": "CASRN", "preferred_name": "Substance Name", "num_records": "# of Records",
@@ -684,6 +694,7 @@ def analytical_qc_batch_search():
     methodologies = parameters["methodologies"]
     base_url = parameters["base_url"]
     include_source_counts = parameters["include_source_counts"]
+    include_functional_uses = parameters["include_functional_uses"]
     
     substance_query = db.select(Substances.dtxsid, Substances.casrn, Substances.preferred_name).filter(Substances.dtxsid.in_(dtxsid_list))
     substances = [c._asdict() for c in db.session.execute(substance_query).all()]
@@ -730,6 +741,11 @@ def analytical_qc_batch_search():
             "literature_count": "Articles", "patent_count": "Patents", "source_count": "Sources", "pubmed_count": "PubMed Record Count"
         }, axis=1, inplace=True)
         result_counts = result_counts.merge(source_count_df, how="left", on="dtxsid")
+    
+    if include_functional_uses:
+        functional_use_classes = cq.functional_uses_for_dtxsids(dtxsid_list)
+        functional_use_df = pd.DataFrame([(k,"; ".join(v) if v else None) for k,v in functional_use_classes.items()], columns=["dtxsid", "Functional Use Classes"])
+        result_counts = result_counts.merge(functional_use_df, how="left", on="dtxsid")
     
     analytical_qc_query = db.select(
             AnalyticalQC.internal_id, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint, AnalyticalQC.stability_call, AnalyticalQC.timepoint
@@ -1265,12 +1281,14 @@ def record_id_search(internal_id):
 
 @app.route("/functional_uses_for_dtxsid/<dtxsid>")
 def functional_uses_for_dtxsid(dtxsid):
-    query = db.select(FunctionalUseClasses.functional_classes).filter(FunctionalUseClasses.dtxsid==dtxsid)
+    """query = db.select(FunctionalUseClasses.functional_classes).filter(FunctionalUseClasses.dtxsid==dtxsid)
     result = db.session.execute(query).first()
     if result:
         return jsonify(result._asdict())
     else:
-        return jsonify({"functional_classes": None})
+        return jsonify({"functional_classes": None})"""
+    functional_use_dict = cq.functional_uses_for_dtxsids([dtxsid])
+    return jsonify({"functional_classes": functional_use_dict.get(dtxsid, None)})
 
 
 @app.route("/dtxsids_for_functional_use/<functional_use>")

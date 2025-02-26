@@ -115,7 +115,7 @@ class Methods(db.Model):
     method_name = db.Column(db.TEXT)
     method_number = db.Column(db.TEXT)
     analyte = db.Column(db.TEXT)
-    chemical_class = db.Column(db.TEXT)
+    functional_classes = db.Column(db.TEXT)
     matrix = db.Column(db.TEXT)
     has_associated_spectra = db.Column(db.BOOLEAN)
     document_type = db.Column(db.TEXT)
@@ -224,6 +224,9 @@ class FunctionalUseClasses(db.Model):
     __table_args__ = {'schema': 'amos'}
     dtxsid = db.Column(db.VARCHAR(32), primary_key=True)
     functional_classes = db.Column(ARRAY(db.TEXT, dimensions=1))
+
+    def get_row_contents(self):
+        return {"dtxsid": self.dtxsid, "functional_classes": self.functional_classes}
 
 
 class DataSourceInfo(db.Model):

@@ -5,11 +5,11 @@ from sqlalchemy import func
 
 from table_definitions import db, AdditionalSources, AdditionalSubstanceInfo, \
     AnalyticalQC, ClassyFire, Contents, DatabaseSummary, FactSheets, \
-    MassSpectra, Methods, MethodsWithSpectra, RecordInfo, SpectrumPDFs, \
-    SubstanceImages, Substances, Synonyms
+    FunctionalUseClasses, MassSpectra, Methods, MethodsWithSpectra, RecordInfo, \
+    SpectrumPDFs, SubstanceImages, Substances, Synonyms
 
 
-EMPTY_ADDITIONAL_INFO_ROW = {"literature_count": 0, "patent_count": 0, "pubmed_count": 0}
+EMPTY_ADDITIONAL_INFO_ROW = {"source_count": 0, "literature_count": 0, "patent_count": 0, "pubmed_count": 0}
 PARTIAL_IDENTIFIER_SEARCH_FIELDS = [
     Substances.image_in_comptox, Substances.dtxsid, Substances.casrn, Substances.monoisotopic_mass,
     Substances.molecular_formula, Substances.preferred_name, AdditionalSubstanceInfo.pubmed_count,
@@ -73,6 +73,23 @@ def formula_search(formula):
     query = db.select(Substances, AdditionalSubstanceInfo).join_from(Substances, AdditionalSubstanceInfo, Substances.dtxsid==AdditionalSubstanceInfo.dtxsid, isouter=True).filter(Substances.molecular_formula==formula)
     results = [r[0].get_row_contents() | (r[1].get_row_contents() if r[1] else EMPTY_ADDITIONAL_INFO_ROW) for r in db.session.execute(query).all()]
     return results
+
+
+def functional_uses_for_dtxsids(dtxsid_list, include_substances_without_uses=True):
+    """
+    Retrieves lists of functional uses classes per DTXSID.  Substances without functional uses are
+    given values of None by default, though this can be changed with the
+    `include_substances_without_uses` flag.
+    """
+    query = db.select(FunctionalUseClasses).filter(FunctionalUseClasses.dtxsid.in_(dtxsid_list))
+    results = [c[0].get_row_contents() for c in db.session.execute(query).all()]
+    result_dict = {r["dtxsid"]: r["functional_classes"] for r in results}
+    if include_substances_without_uses:
+        for d in dtxsid_list:
+            if d not in result_dict:
+                result_dict[d] = None
+    return result_dict
+    
 
 
 def ids_for_substances(dtxsids, record_type=None, additional_fields=[]):
