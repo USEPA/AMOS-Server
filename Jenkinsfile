@@ -18,7 +18,7 @@ pipeline {
 
         stage('SCM') {
             steps {
-                git poll: true, branch: 'master', credentialsId: 'valery_tkachenko', url: 'https://bitbucket.org/scidataexperts/amos-server.git'
+                git poll: true, branch: 'dev', credentialsId: 'valery_tkachenko', url: 'https://bitbucket.org/scidataexperts/amos-server.git'
             }
         }
 
