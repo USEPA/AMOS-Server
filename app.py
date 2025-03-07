@@ -36,10 +36,12 @@ sentry_sdk.init(
 # load info for PostgreSQL & API access
 uname = os.environ['AMOS_POSTGRES_USER']
 pwd = os.environ['AMOS_POSTGRES_PASSWORD']
+server = os.environ['AMOS_POSTGRES_SERVER']
+database = os.environ['AMOS_POSTGRES_DATABASE']
 ccte_api_key = os.environ['CCTE_API_KEY']
 
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@ccte-pgsql-stg.epa.gov:5432/dev_poc"
+app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@{server}:5432/{database}"
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = "secretkey"
