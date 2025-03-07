@@ -1239,7 +1239,7 @@ def all_similarities_by_dtxsid():
         try:
             spectrum.validate_spectrum(us)
         except ValueError as ve:
-            return jsonify({"error": f"User-supplied spectrum number {i + 1} is invalid: {ve}"})
+            return jsonify({"error": f"User-supplied spectrum number {i+1} is invalid: {ve}"})
 
     da = request_json.get("da_window")
     ppm = request_json.get("ppm_window")
@@ -1248,8 +1248,7 @@ def all_similarities_by_dtxsid():
     if type(ms_level) != int:
         ms_level = None
 
-    results = cq.mass_spectra_for_substances(dtxsids, ms_level=ms_level,
-                                             additional_fields=[MassSpectra.spectrum_metadata])
+    results = cq.mass_spectra_for_substances(dtxsids, ms_level=ms_level, additional_fields=[MassSpectra.spectrum_metadata])
 
     # mass query
     q = db.select(Substances.dtxsid, Substances.monoisotopic_mass).filter(Substances.dtxsid.in_(dtxsids))
@@ -1259,11 +1258,10 @@ def all_similarities_by_dtxsid():
     similarity_list = []
     for us in user_spectra:
         us = [[mz, i] for mz, i in us if i > min_intensity]
-        substance_dict = {d: [] for d in dtxsids}
+        substance_dict = {d:[] for d in dtxsids}
         for r in results:
             # filter out peaks above the monoisotopic mass (minus a proton or so) and peaks below a certain intensity
-            result_spectrum = [[mz, i] for mz, i in r["spectrum"] if
-                               (mz < (mass_dict[r["dtxsid"]] - 1.5)) and (i > min_intensity)]
+            result_spectrum = [[mz, i] for mz, i in r["spectrum"] if (mz < (mass_dict[r["dtxsid"]]-1.5)) and (i > min_intensity)]
             if len(result_spectrum) == 0:
                 continue
             if r["description"].startswith("#"):
@@ -1272,16 +1270,12 @@ def all_similarities_by_dtxsid():
                 description = ";".join(r["description"].split(";")[:-1])
             combined_spectrum = spectrum.combine_peaks(result_spectrum)
             spectral_entropy = spectrum.calculate_spectral_entropy(combined_spectrum)
-            normalized_entropy = spectral_entropy / len(combined_spectrum)
-            information = {"Points": len(result_spectrum), "Spectral Entropy": spectral_entropy,
-                           "Normalized Entropy": normalized_entropy,
-                           "Rating": spectrum.spectrum_rating(spectral_entropy, normalized_entropy)}
-            entropy_similarity = spectrum.calculate_entropy_similarity(us, combined_spectrum, da_error=da,
-                                                                       ppm_error=ppm)
+            normalized_entropy = spectral_entropy/len(combined_spectrum)
+            information = {"Points": len(result_spectrum), "Spectral Entropy": spectral_entropy, "Normalized Entropy": normalized_entropy,
+                        "Rating": spectrum.spectrum_rating(spectral_entropy, normalized_entropy)}
+            entropy_similarity = spectrum.calculate_entropy_similarity(us, combined_spectrum, da_error=da, ppm_error=ppm)
             cosine_similarity = spectrum.cosine_similarity(us, combined_spectrum)
-            substance_dict[r["dtxsid"]].append(
-                {"entropy_similarity": entropy_similarity, "cosine_similarity": cosine_similarity,
-                 "description": description, "metadata": r["spectrum_metadata"], "information": information})
+            substance_dict[r["dtxsid"]].append({"entropy_similarity": entropy_similarity, "cosine_similarity": cosine_similarity, "description": description, "metadata": r["spectrum_metadata"], "information": information})
         similarity_list.append(substance_dict)
 
     return jsonify({"results": similarity_list})
@@ -1825,7 +1819,7 @@ def record_type_count(record_type):
         return Response(status=204)
 
 
-@app.get("/api/amos/method_pagination/<limit>/<offset>")
+@app.get("/method_pagination/<limit>/<offset>")
 def method_pagination(limit, offset):
     """
     Returns a paginated list of methods.
@@ -1844,15 +1838,13 @@ def method_pagination(limit, offset):
         description: Methods information
     """
     q = db.select(
-        Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix,
-        Methods.analyte,
-        Methods.functional_classes, Methods.pdf_metadata, RecordInfo.source, RecordInfo.methodologies,
-        RecordInfo.description,
+        Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix, Methods.analyte,
+        Methods.functional_classes, Methods.pdf_metadata, RecordInfo.source, RecordInfo.methodologies, RecordInfo.description,
         RecordInfo.link, Methods.document_type, Methods.publisher, func.count(Contents.dtxsid)
     ).join_from(
-        Methods, RecordInfo, Methods.internal_id == RecordInfo.internal_id
+        Methods, RecordInfo, Methods.internal_id==RecordInfo.internal_id
     ).join_from(
-        RecordInfo, Contents, RecordInfo.internal_id == Contents.internal_id, isouter=True
+        RecordInfo, Contents, RecordInfo.internal_id==Contents.internal_id, isouter=True
     ).group_by(
         Methods.internal_id, RecordInfo.internal_id
     ).order_by(Methods.internal_id).limit(limit).offset(offset)
@@ -1872,7 +1864,7 @@ def method_pagination(limit, offset):
     return {"results": results}
 
 
-@app.get("/api/amos/fact_sheet_pagination/<limit>/<offset>")
+@app.get("/fact_sheet_pagination/<limit>/<offset>")
 def fact_sheet_pagination(limit, offset):
     """
     Returns a paginated list of fact sheets.
@@ -1891,17 +1883,27 @@ def fact_sheet_pagination(limit, offset):
         description: Fact sheets information
     """
     q = db.select(
-        FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.analyte, FactSheets.document_type,
-        FactSheets.functional_classes,
+        FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.analyte, FactSheets.document_type, FactSheets.functional_classes,
         RecordInfo.source, RecordInfo.link, func.count(Contents.dtxsid)
     ).join_from(
-        FactSheets, RecordInfo, FactSheets.internal_id == RecordInfo.internal_id
+        FactSheets, RecordInfo, FactSheets.internal_id==RecordInfo.internal_id
     ).join_from(
-        RecordInfo, Contents, RecordInfo.internal_id == Contents.internal_id, isouter=True
+        RecordInfo, Contents, RecordInfo.internal_id==Contents.internal_id, isouter=True
     ).group_by(
         FactSheets.internal_id, RecordInfo.internal_id
     ).order_by(FactSheets.internal_id).limit(limit).offset(offset)
     results = [r._asdict() for r in db.session.execute(q).all()]
+
+    single_dtxsid_ids = [r["internal_id"] for r in results if r["count"] == 1]
+    q2 = db.select(Contents.internal_id, Contents.dtxsid).filter(Contents.internal_id.in_(single_dtxsid_ids))
+    single_dtxsid_results = {r.internal_id: r.dtxsid for r in db.session.execute(q2).all()}
+
+    for i in range(len(results)):
+        if results[i]["internal_id"] in single_dtxsid_results:
+            results[i]["dtxsid"] = single_dtxsid_results[results[i]["internal_id"]]
+
+    return jsonify({"results":results})
+
 
     single_dtxsid_ids = [r["internal_id"] for r in results if r["count"] == 1]
     q2 = db.select(Contents.internal_id, Contents.dtxsid).filter(Contents.internal_id.in_(single_dtxsid_ids))
