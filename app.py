@@ -38,6 +38,7 @@ uname = os.environ['AMOS_POSTGRES_USER']
 pwd = os.environ['AMOS_POSTGRES_PASSWORD']
 server = os.environ['AMOS_POSTGRES_SERVER']
 database = os.environ['AMOS_POSTGRES_DATABASE']
+ccte_api_server = os.environ['CCTE_API_SERVER']
 ccte_api_key = os.environ['CCTE_API_KEY']
 
 app = Flask(__name__)
@@ -450,7 +451,7 @@ def find_similar_substances(dtxsid, similarity_threshold=0.8):
     A list of similar substances, or None if none were found.
     """
 
-    BASE_URL = "https://ccte-api-ccd.epa.gov/similar-compound/by-dtxsid/"
+    BASE_URL = f"{ccte_api_server}/similar-compound/by-dtxsid/"
     response = requests.get(f"{BASE_URL}{dtxsid}/{similarity_threshold}")
     if response.status_code == 200:
         return {"similar_substance_info": response.json()}
