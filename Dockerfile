@@ -1,5 +1,6 @@
-# Import Docker image
 FROM python:3.12-alpine
+
+RUN apk add --update alpine-sdk
 
 WORKDIR /app
 
