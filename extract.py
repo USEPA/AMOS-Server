@@ -1,13 +1,15 @@
+import argparse
+import json
 import os
 
+import pytesseract
+from pdf2image import convert_from_path
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import sessionmaker
-import json
-
 from tqdm import tqdm
 
-from table_definitions import DatabaseSummary, FactSheets, Methods, SpectrumPDFs, AnalyticalQC
+from table_definitions import FactSheets, Methods, SpectrumPDFs, AnalyticalQC
 
 
 # https://coderpad.io/blog/development/sqlalchemy-with-postgresql/
@@ -34,6 +36,7 @@ def save_methods(session):
 
             pb.update()
 
+
 def save_fact_sheets(session):
     os.makedirs("fact_sheets", exist_ok=True)
     with tqdm(total=session.query(FactSheets).count(), desc="Fact sheets") as pb:
@@ -51,6 +54,7 @@ def save_fact_sheets(session):
 
             pb.update()
 
+
 def save_spectra(session):
     os.makedirs("spectra", exist_ok=True)
     with tqdm(total=session.query(SpectrumPDFs).count(), desc="Spectra") as pb:
@@ -63,6 +67,7 @@ def save_spectra(session):
                 json.dump(js, file, indent=4)
 
             pb.update()
+
 
 def save_analytical_qc(session):
     os.makedirs("analytical_qc", exist_ok=True)
@@ -94,7 +99,7 @@ def save_analytical_qc(session):
             pb.update()
 
 
-if __name__ == "__main__":
+def export(args):
     url = URL.create(
         drivername="postgresql+psycopg2",
         username="postgres",
@@ -102,13 +107,50 @@ if __name__ == "__main__":
         host="127.0.0.1",
         database="amos"
     )
-
     engine = create_engine(url)
     conn = engine.connect()
-
     Session = sessionmaker(bind=engine)
     with Session() as session:
-        save_methods(session)
-        save_fact_sheets(session)
-        save_spectra(session)
-        save_analytical_qc(session)
+        if 'methods' in args.objects:
+            save_methods(session)
+        if 'fact_sheets' in args.objects:
+            save_fact_sheets(session)
+        if 'spectra' in args.objects:
+            save_spectra(session)
+        if 'analytical_qc' in args.objects:
+            save_analytical_qc(session)
+
+
+def extract(args):
+    pages = convert_from_path(args.input)
+    text = ''
+    for page in pages:
+        text += pytesseract.image_to_string(page) + '\n'
+    print(text)
+
+    if args.output:
+        with open(args.output, 'w', encoding='utf-8') as f:
+            f.write(text)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    parser_export = subparsers.add_parser('export')
+    parser_export.add_argument('-o', '--objects', nargs="+", required=False,
+                               choices=['methods', 'fact_sheets', 'spectra', 'analytical_qc'],
+                               default=['methods', 'fact_sheets', 'spectra', 'analytical_qc'], type=str)
+
+    parser_export = subparsers.add_parser('extract')
+    parser_export.add_argument('-i', '--input', type=str, required=True)
+    parser_export.add_argument('-o', '--output', type=str)
+
+    args = parser.parse_args()
+
+    if args.command == 'export':
+        export(args)
+    elif args.command == 'extract':
+        extract(args)
+    else:
+        parser.print_usage()

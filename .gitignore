@@ -3,3 +3,8 @@ __pycache__
 *.db
 data_old
 vars.ini
+analytical_qc/
+fact_sheets/
+methods/
+spectra/
+data/`
