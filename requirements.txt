@@ -25,12 +25,12 @@ PyJWT==2.6.0
 python-dateutil==2.8.2
 pytz==2022.7.1
 PyYAML==6.0.1
-requests==2.32.0
+requests==2.25.1
 sentry-sdk==2.22.0
 six==1.16.0
 SQLAlchemy==1.4.18
 tenacity==8.2.2
-tqdm==4.66.3
-urllib3==2.2.2
+tqdm==4.66.1
+urllib3==1.26.11
 Werkzeug==3.0.4
 dotenv
