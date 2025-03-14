@@ -32,7 +32,9 @@ sentry_sdk.init(
     traces_sample_rate=1.0
 )
 
-load_dotenv(verbose=True)
+# In Cloud ENV should already be configured
+if 'AMOS_POSTGRES_USER' not in os.environ:
+    load_dotenv(verbose=True)
 
 # load info for PostgreSQL & API access
 uname = os.environ['AMOS_POSTGRES_USER']
