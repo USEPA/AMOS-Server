@@ -6,7 +6,6 @@ from enum import Enum
 
 import pandas as pd
 import sentry_sdk
-from dotenv import load_dotenv
 from flask import Flask, jsonify, make_response, request, Response
 from flask_cors import CORS
 from sentry_sdk.integrations.flask import FlaskIntegration
@@ -32,20 +31,17 @@ sentry_sdk.init(
     traces_sample_rate=1.0
 )
 
-# In Cloud ENV should already be configured
-if 'AMOS_POSTGRES_USER' not in os.environ:
-    load_dotenv(verbose=True)
-
 # load info for PostgreSQL & API access
 uname = os.environ['AMOS_POSTGRES_USER']
 pwd = os.environ['AMOS_POSTGRES_PASSWORD']
-server = os.environ['AMOS_POSTGRES_SERVER']
-database = os.environ['AMOS_POSTGRES_DATABASE']
+server = os.environ.get('AMOS_POSTGRES_SERVER', 'localhost')
+port = os.environ.get('AMOS_POSTGRES_PORT', '5432')
+database = os.environ.get('AMOS_POSTGRES_DATABASE', 'amos')
 ccte_api_server = os.environ['CCTE_API_SERVER']
 ccte_api_key = os.environ['CCTE_API_KEY']
 
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@{server}:5432/{database}"
+app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@{server}:{port}/{database}"
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = "secretkey"
