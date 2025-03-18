@@ -12,7 +12,7 @@ Flask-Cors==4.0.2
 Flask-JWT-Extended==4.4.3
 Flask-SQLAlchemy==2.5.1
 greenlet==3.1.1
-idna==2.10
+idna==3.7
 itsdangerous==2.1.2
 Jinja2==3.1.2
 MarkupSafe==2.1.1
@@ -31,6 +31,6 @@ six==1.16.0
 SQLAlchemy==1.4.18
 tenacity==8.2.2
 tqdm==4.66.1
-urllib3==1.26.11
+urllib3==2.2.2
 Werkzeug==3.0.4
 dotenv
