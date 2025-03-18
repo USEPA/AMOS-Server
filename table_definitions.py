@@ -4,8 +4,9 @@ from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.dialects.postgresql import ARRAY, BYTEA
 
-# In Cloud ENV should already be configured. Load before tables definitions to set schema
-if 'AMOS_POSTGRES_USER' not in os.environ:
+# In CI/CD scenario ENV should already be configured, otherwise load from .env for a local run
+# Load before tables definitions to set schema
+if 'AMOS_POSTGRES_USER' not in os.environ and 'SQLALCHEMY_DATABASE_URI' not in os.environ:
     load_dotenv(verbose=True)
 
 schema = os.environ.get('AMOS_POSTGRES_SCHEMA', 'amos')

@@ -31,17 +31,21 @@ sentry_sdk.init(
     traces_sample_rate=1.0
 )
 
-# load info for PostgreSQL & API access
-uname = os.environ['AMOS_POSTGRES_USER']
-pwd = os.environ['AMOS_POSTGRES_PASSWORD']
-server = os.environ.get('AMOS_POSTGRES_SERVER', 'localhost')
-port = os.environ.get('AMOS_POSTGRES_PORT', '5432')
-database = os.environ.get('AMOS_POSTGRES_DATABASE', 'amos')
+# Load connection info for PostgreSQL & API access
 ccte_api_server = os.environ['CCTE_API_SERVER']
 ccte_api_key = os.environ['CCTE_API_KEY']
 
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@{server}:{port}/{database}"
+
+if os.environ.get('SQLALCHEMY_DATABASE_URI', None):
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get('SQLALCHEMY_DATABASE_URI')
+else:
+    uname = os.environ.get('AMOS_POSTGRES_USER', None)
+    pwd = os.environ.get('AMOS_POSTGRES_PASSWORD', None)
+    server = os.environ.get('AMOS_POSTGRES_SERVER', 'localhost')
+    port = os.environ.get('AMOS_POSTGRES_PORT', '5432')
+    database = os.environ.get('AMOS_POSTGRES_DATABASE', 'amos')
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql+psycopg2://{uname}:{pwd}@{server}:{port}/{database}"
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = "secretkey"
