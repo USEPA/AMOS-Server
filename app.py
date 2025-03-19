@@ -451,7 +451,7 @@ def find_similar_substances(dtxsid, similarity_threshold=0.8):
     A list of similar substances, or None if none were found.
     """
 
-    BASE_URL = "https://ccte-api-ccd.epa.gov/similar-compound/by-dtxsid/"
+    BASE_URL = "https://comptox.epa.gov/dashboard-api/similar-compound/by-dtxsid/"
     response = requests.get(f"{BASE_URL}{dtxsid}/{similarity_threshold}")
     if response.status_code == 200:
         return {"similar_substance_info": response.json()}
@@ -1352,10 +1352,12 @@ def mass_range_search():
 
 @app.route("/record_type_count/<record_type>")
 def record_type_count(record_type):
-    possible_record_types = {"fact_sheets", "methods"}
+    possible_record_types = {"analytical_qc", "fact_sheets", "methods"}
     if record_type in possible_record_types:
         if record_type == "methods":
             query = db.select(func.count(Methods.internal_id))
+        elif record_type == "analytical_qc":
+            query = db.select(func.count(AnalyticalQC.internal_id))
         else:
             query = db.select(func.count(FactSheets.internal_id))
         record_count = db.session.execute(query).first()[0]
@@ -1416,6 +1418,22 @@ def fact_sheet_pagination(limit, offset):
             results[i]["dtxsid"] = single_dtxsid_results[results[i]["internal_id"]]
 
     return jsonify({"results":results})
+
+
+@app.get("/analytical_qc_pagination/<limit>/<offset>")
+def analytical_qc_pagination(limit, offset):
+    q = db.select(
+        Contents.internal_id, Contents.dtxsid, Substances.preferred_name, Substances.casrn, Substances.molecular_formula,
+        AnalyticalQC.experiment_date, AnalyticalQC.timepoint, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint,
+        AnalyticalQC.stability_call, AnalyticalQC.annotation, AnalyticalQC.study, AnalyticalQC.sample_id,
+        AnalyticalQC.lcms_amen_pos_true, AnalyticalQC.lcms_amen_neg_true, AnalyticalQC.flags
+    ).join_from(
+        AnalyticalQC, Contents, AnalyticalQC.internal_id==Contents.internal_id
+    ).join_from(
+        Contents, Substances, Contents.dtxsid==Substances.dtxsid
+    ).order_by(AnalyticalQC.internal_id).limit(limit).offset(offset)
+    results = [c._asdict() for c in db.session.execute(q).all()]
+    return jsonify({"results": results})
 
 
 if __name__ == "__main__":
