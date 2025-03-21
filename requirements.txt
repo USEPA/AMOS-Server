@@ -20,6 +20,7 @@ idna==3.7
 itsdangerous==2.1.2
 Jinja2==3.1.2
 MarkupSafe==2.1.1
+narwhals==1.29.1
 numpy==1.26.4
 openpyxl==3.1.2
 packaging==24.2
@@ -28,6 +29,7 @@ pdf2image==1.17.0
 pillow==11.1.0
 pip-upgrader==1.4.15
 plotly==5.13.1
+psycopg2==2.9.10
 psycopg2-binary==2.9.10
 PyJWT==2.6.0
 pytesseract==0.3.13
@@ -42,6 +44,8 @@ SQLAlchemy==1.4.18
 tenacity==8.2.2
 terminaltables==3.1.10
 tqdm==4.66.3
+typing_extensions==4.12.2
+tzdata==2025.1
 urllib3==2.2.2
-uvicorn==0.34.0
+waitress==3.0.2
 Werkzeug==3.0.4
