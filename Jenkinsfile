@@ -36,6 +36,12 @@ pipeline {
             }
         }
 
+        stage('Security Scan') {
+            steps {
+                sh "trivy image ${DOCKER_REGISTRY}/epa/${IMAGE_NAME}:${IMAGE_TAG}"
+            }
+        }
+
         stage('Deploy') {
             steps {
                 withKubeConfig([credentialsId: 'k8s', serverUrl: 'https://k8s.sciencedataexperts.com:6443']) {
