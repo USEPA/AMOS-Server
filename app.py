@@ -1133,6 +1133,18 @@ def all_similarities_by_dtxsid():
 
 @app.get("/get_info_by_id/<internal_id>")
 def get_info_by_id(internal_id):
+    """
+    Return information by internal record id
+    ---
+    parameters:
+      - in: query
+        name: internal_id
+        type: integer
+        description: ID of the document in the database.
+    responses:
+      200:
+        description: Record information.
+    """
     q = db.select(RecordInfo).filter(RecordInfo.internal_id == internal_id)
     result = db.session.execute(q).first()
     if result:
@@ -1143,6 +1155,13 @@ def get_info_by_id(internal_id):
 
 @app.get("/database_summary/")
 def database_summary():
+    """
+    Return database summary information
+    ---
+    responses:
+      200:
+        description: Database summary information.
+    """
     summary_info = cq.database_summary()
     return jsonify(summary_info)
 
@@ -1162,6 +1181,15 @@ def mass_spectra_for_substances():
 def get_image_for_dtxsid(dtxsid):
     """
     Retrieves a substance's image from the database.
+    ---
+    parameters:
+      - in: query
+        name: dtxsid
+        type: string
+        description: DTXSID of the substance.
+    responses:
+      200:
+        description: PNG image of the substance
     """
     q = db.select(SubstanceImages.png_image).filter(SubstanceImages.dtxsid == dtxsid)
     result = db.session.execute(q).first()
@@ -1178,10 +1206,19 @@ def get_image_for_dtxsid(dtxsid):
 @app.get("/substring_search/<substring>")
 def substring_search(substring):
     """
-    Searches the database for substances by substring.  Both the
-    preferred name and the synonyms are searched.  This returns a list
+    Searches the database for substances by substring.
+    Both the preferred name and the synonyms are searched. This returns a list
     of substances, synonyms that matched the search (if any), and the
     record counts for each substance.
+    ---
+    parameters:
+      - in: query
+        name: substring
+        type: string
+        description: A string to search by
+    responses:
+      200:
+        description: List of substances, synonyms that matched the search (if any), and the record counts for each substance
     """
 
     preferred_names, synonyms = cq.substring_search(substring)
@@ -1207,10 +1244,17 @@ def substring_search(substring):
 @app.get("/get_ms_ready_methods/<inchikey>")
 def get_ms_ready_methods(inchikey):
     """
-    Retrieves a list of methods that contain the MS-Ready forms of a
-    given substance but not the substance itself.  These methods are
-    found by looking for substances which match the first block of the
-    given InChIKey.
+    Retrieves a list of methods that contain the MS-Ready forms of a given substance but not the substance itself.
+    These methods are found by looking for substances which match the first block of the given InChIKey.
+    ---
+    parameters:
+      - in: query
+        name: inchikey
+        type: string
+        description: InChIKey to search by
+    responses:
+      200:
+        description: List of MS-Ready methods.
     """
     first_block = inchikey.split("-")[0]
     q = db.select(
@@ -1244,8 +1288,16 @@ def get_ms_ready_methods(inchikey):
 @app.get("/get_substance_file_for_record/<internal_id>")
 def get_substance_file_for_record(internal_id):
     """
-    Creates an Excel workbook listing the substances in the specified
-    record.
+    Creates an Excel workbook listing the substances in the specified record.
+    ---
+    parameters:
+      - in: query
+        name: internal_id
+        type: integer
+        description: Internal database ID of the record.
+    responses:
+      200:
+        description: Excel workbook listing the substances in the specified record.
     """
     substance_list = find_dtxsids(internal_id).json["substance_list"]
     substance_list = [(sl["dtxsid"], sl["casrn"], sl["preferred_name"]) for sl in substance_list]
@@ -1260,7 +1312,11 @@ def get_substance_file_for_record(internal_id):
 @app.get("/analytical_qc_list/")
 def analytical_qc_list():
     """
-    Retrieves information on all of the AnalyticalQC PDFs in the database.
+    Retrieves information on all the AnalyticalQC PDFs in the database.
+    ---
+    responses:
+      200:
+        description: AnalyticalQC PDFs in the database.
     """
     q = db.select(
         Contents.internal_id, Contents.dtxsid, Substances.preferred_name, Substances.casrn,
@@ -1280,8 +1336,16 @@ def analytical_qc_list():
 @app.get("/additional_sources_for_substance/<dtxsid>")
 def additional_sources_for_substance(dtxsid):
     """
-    Retrieves links for supplemental sources (e.g., Wikipedia, ChemExpo) for a
-    given DTXSID.
+    Retrieves links for supplemental sources (e.g., Wikipedia, ChemExpo) for a given DTXSID.
+    ---
+    parameters:
+      - in: query
+        name: dtxsid
+        type: string
+        description: DTXSID of the substance.
+    responses:
+      200:
+        description: Links for supplemental sources (e.g., Wikipedia, ChemExpo)
     """
     sources = cq.additional_sources_by_substance(dtxsid)
     return jsonify(sources)
@@ -1291,15 +1355,15 @@ def additional_sources_for_substance(dtxsid):
 def retrieve_nmr_spectrum(internal_id):
     """
     Endpoint for retrieving a specified NMR spectrum from the database.
-
-    Parameters
-    --
-    internal_id : string
-        The unique internal identifier for the spectrum that's being looked for.
-
-    Returns
-    --
-    A JSON structure containing the information about the spectrum.
+    ---
+    parameters:
+      - in: query
+        name: internal_id
+        type: integer
+        description: The unique internal identifier for the spectrum that's being looked for.
+    responses:
+      200:
+        description: A JSON structure containing the information about the spectrum.
     """
     q = db.select(
         NMRSpectra.intensities, NMRSpectra.first_x, NMRSpectra.last_x, NMRSpectra.x_units,
@@ -1317,6 +1381,18 @@ def retrieve_nmr_spectrum(internal_id):
 
 @app.get("/get_classification_for_dtxsid/<dtxsid>")
 def get_classification_for_dtxsid(dtxsid):
+    """
+    Returns the classification of a given substance.
+    ---
+    parameters:
+      - in: query
+        name: dtxsid
+        type: string
+        description: DTXSID of the substance.
+    responses:
+      200:
+        description: JSON with classification information.
+    """
     classification_info = cq.classyfire_for_dtxsid(dtxsid)
     if classification_info is not None:
         return jsonify(classification_info)
@@ -1380,6 +1456,15 @@ def next_level_classification():
 def fact_sheets_for_substance(dtxsid):
     """
     Returns a list of fact sheets that are associated with the given DTXSID.
+    ---
+    parameters:
+      - in: query
+        name: dtxsid
+        type: string
+        description: DTXSID of the substance.
+    responses:
+      200:
+        description: List of fact sheets.
     """
     info_list = cq.ids_for_substances([dtxsid], record_type="Fact Sheet")
     fact_sheet_ids = [r["internal_id"] for r in info_list]
@@ -1390,6 +1475,10 @@ def fact_sheets_for_substance(dtxsid):
 def data_source_info():
     """
     Returns a list of major data sources in AMOS with some supplemental information.
+    ---
+    responses:
+      200:
+        description: JSON with the list of major data sources
     """
     query = db.select(DataSourceInfo)
     return [c[0].get_row_contents() for c in db.session.execute(query).all()]
@@ -1397,6 +1486,18 @@ def data_source_info():
 
 @app.get("/record_id_search/<internal_id>")
 def record_id_search(internal_id):
+    """
+    Record information by ID
+    ---
+    parameters:
+      - in: query
+        name: internal_id
+        type: integer
+        description: The unique internal identifier for the spectrum that's being looked for.
+    responses:
+      200:
+        description: A JSON structure containing the information about the record.
+    """
     id_query = db.select(RecordInfo.record_type, RecordInfo.data_type, RecordInfo.link).filter(
         RecordInfo.internal_id == internal_id)
     result = db.session.execute(id_query).first()
@@ -1408,6 +1509,19 @@ def record_id_search(internal_id):
 
 @app.get("/functional_uses_for_dtxsid/<dtxsid>")
 def functional_uses_for_dtxsid(dtxsid):
+    """
+    Returns a list of functional uses for a substance
+    ---
+    parameters:
+      - in: query
+        name: dtxsid
+        type: string
+        description: DTXSID of the substance.
+    responses:
+      200:
+        description: List of functional uses.
+    """
+
     """query = db.select(FunctionalUseClasses.functional_classes).filter(FunctionalUseClasses.dtxsid==dtxsid)
     result = db.session.execute(query).first()
     if result:
@@ -1420,6 +1534,18 @@ def functional_uses_for_dtxsid(dtxsid):
 
 @app.get("/dtxsids_for_functional_use/<functional_use>")
 def dtxsids_for_functional_use(functional_use):
+    """
+    Returns a list of DTXSIDs for the given functional use.
+    ---
+    parameters:
+      - in: query
+        name: functional_use
+        type: string
+        description: Functional use to search by
+    responses:
+      200:
+        description: List of DTXSIDs for the given functional use.
+    """
     query = db.select(FunctionalUseClasses.dtxsid).filter(FunctionalUseClasses.functional_classes.any(functional_use))
     dtxsid_list = [c.dtxsid for c in db.session.execute(query).all()]
     return jsonify({"dtxsids": dtxsid_list})
@@ -1427,6 +1553,18 @@ def dtxsids_for_functional_use(functional_use):
 
 @app.get("/formula_search/<formula>")
 def formula_search(formula):
+    """
+    Returns a list of substances found by MF
+    ---
+    parameters:
+      - in: query
+        name: formula
+        type: string
+        description: Molecular furmula to search by.
+    responses:
+      200:
+        description: List of DTXSIDs for the given functional use.
+    """
     substances = cq.formula_search(formula)
     dtxsids = [s["dtxsid"] for s in substances]
     record_counts = cq.record_counts_by_dtxsid(dtxsids)
@@ -1436,6 +1574,18 @@ def formula_search(formula):
 
 @app.get("/inchikey_first_block_search/<first_block>")
 def inchikey_first_block_search(first_block):
+    """
+    Returns a list of substances found by InChI key.
+    ---
+    parameters:
+      - in: query
+        name: first_block
+        type: string
+        description: First block of InChI key to search by.
+    responses:
+      200:
+        description: List of substances found by InChI key.
+    """
     substances = cq.inchikey_first_block_search(first_block)
     dtxsids = [s["dtxsid"] for s in substances]
     record_counts = cq.record_counts_by_dtxsid(dtxsids)
@@ -1445,6 +1595,18 @@ def inchikey_first_block_search(first_block):
 
 @app.get("/get_ir_spectrum/<internal_id>")
 def get_ir_spectrum(internal_id):
+    """
+    Returns a list of IR spectra by ID.
+    ---
+    parameters:
+      - in: query
+        name: internal_id
+        type: integer
+        description: The unique internal identifier for the spectrum that's being looked for.
+    responses:
+      200:
+        description: A JSON structure containing the information about the IR spectrum.
+    """
     q = db.select(
         InfraredSpectra.first_x, InfraredSpectra.intensities, InfraredSpectra.ir_type,
         InfraredSpectra.laser_frequency, InfraredSpectra.last_x, InfraredSpectra.spectrum_metadata
@@ -1471,6 +1633,18 @@ def mass_range_search():
 
 @app.get("/record_type_count/<record_type>")
 def record_type_count(record_type):
+    """
+    Returns the number of records of the given type.
+    ---
+    parameters:
+      - in: query
+        name: record_type
+        type: string
+        description: Record type to search by
+    responses:
+      200:
+        description: Count of record types.
+    """
     possible_record_types = {"fact_sheets", "methods"}
     if record_type in possible_record_types:
         if record_type == "methods":
@@ -1485,6 +1659,22 @@ def record_type_count(record_type):
 
 @app.get("/method_pagination/<limit>/<offset>")
 def method_pagination(limit, offset):
+    """
+    Returns a paginated list of methods.
+    ---
+    parameters:
+      - in: query
+        name: limit
+        type: integer
+        description: Limit of records to return.
+      - in: query
+        name: offset
+        type: integer
+        description: Offset of method records to return.
+    responses:
+      200:
+        description: Methods information
+    """
     q = db.select(
         Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix,
         Methods.analyte,
@@ -1516,6 +1706,22 @@ def method_pagination(limit, offset):
 
 @app.get("/fact_sheet_pagination/<limit>/<offset>")
 def fact_sheet_pagination(limit, offset):
+    """
+    Returns a paginated list of fact sheets.
+    ---
+    parameters:
+      - in: query
+        name: limit
+        type: integer
+        description: Limit of records to return.
+      - in: query
+        name: offset
+        type: integer
+        description: Offset of fact sheets to return.
+    responses:
+      200:
+        description: Fact sheets information
+    """
     q = db.select(
         FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.analyte, FactSheets.document_type,
         FactSheets.functional_classes,
