@@ -1,3 +1,4 @@
+aniso8601==10.0.0
 blinker==1.6.2
 certifi==2024.7.4
 chardet==4.0.0
@@ -13,7 +14,10 @@ et-xmlfile==1.1.0
 Flask==2.3.3
 Flask-Cors==4.0.2
 Flask-JWT-Extended==4.4.3
+Flask-RESTful==0.3.10
 Flask-SQLAlchemy==2.5.1
+flask-swagger==0.2.14
+flask-swagger-ui==4.11.1
 greenlet==3.1.1
 h11==0.14.0
 idna==3.7
@@ -27,6 +31,7 @@ packaging==24.2
 pandas==1.5.3
 pdf2image==1.17.0
 pillow==11.1.0
+pip==24.3.1
 pip-upgrader==1.4.15
 plotly==5.13.1
 psycopg2-binary==2.9.10
@@ -47,6 +52,3 @@ typing_extensions==4.12.2
 tzdata==2025.1
 urllib3==2.2.2
 waitress==3.0.2
-flask-restful
-flask-swagger
-flask_swagger_ui
