@@ -1,13 +1,19 @@
 import logging
 import os
 import re
+import ssl
 from collections import Counter
 from enum import Enum
 
 import pandas as pd
+import requests
 import sentry_sdk
+import urllib3
 from flask import Flask, jsonify, make_response, request, Response
 from flask_cors import CORS
+from flask_restful import Api
+from flask_swagger import swagger
+from flask_swagger_ui import get_swaggerui_blueprint
 from sentry_sdk.integrations.flask import FlaskIntegration
 from sqlalchemy import func, or_
 
@@ -17,6 +23,28 @@ import util
 from table_definitions import db, AnalyticalQC, ClassyFire, Contents, DataSourceInfo, FactSheets, \
     FunctionalUseClasses, InfraredSpectra, MassSpectra, Methods, MethodsWithSpectra, NMRSpectra, \
     RecordInfo, SubstanceImages, Substances, Synonyms
+
+
+class CustomHttpAdapter(requests.adapters.HTTPAdapter):
+    # "Transport adapter" that allows us to use custom ssl_context.
+
+    def __init__(self, ssl_context=None, **kwargs):
+        self.ssl_context = ssl_context
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False):
+        self.poolmanager = urllib3.poolmanager.PoolManager(
+            num_pools=connections, maxsize=maxsize,
+            block=block, ssl_context=self.ssl_context)
+
+
+def get_legacy_session():
+    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    ctx.options |= 0x4  # OP_LEGACY_SERVER_CONNECT
+    session = requests.session()
+    session.mount('https://', CustomHttpAdapter(ctx))
+    return session
+
 
 # Integrating Sentry into Amos
 sentry_sdk.init(
@@ -36,6 +64,29 @@ ccte_api_server = os.environ['CCTE_API_SERVER']
 ccte_api_key = os.environ['CCTE_API_KEY']
 
 app = Flask(__name__)
+api = Api(app)
+
+
+@app.route('/api/amos/swagger.json')
+def get_swagger():
+    swag = swagger(app)
+    swag['info']['version'] = "1.0"
+    swag['info']['title'] = "AMOS API"
+    return jsonify(swag)
+
+
+# Swagger UI route
+SWAGGER_URL = '/api/amos/swagger-ui'
+API_URL = '/api/amos/swagger.json'
+swaggerui_blueprint = get_swaggerui_blueprint(
+    SWAGGER_URL,
+    API_URL,
+    config={
+        'app_name': "My API"
+    }
+)
+
+app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 
 if os.environ.get('SQLALCHEMY_DATABASE_URI', None):
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get('SQLALCHEMY_DATABASE_URI')
@@ -68,14 +119,12 @@ def determine_search_type(search_term):
     """
     Determine whether the search term in question is an InChIKey, CAS number, or
     a name.
-
-    Parameters
-    ----------
+    --
     search_term : string
         String used for searching.
 
     Returns
-    -------
+    --
     SearchType enum.
 
     """
@@ -90,9 +139,11 @@ def determine_search_type(search_term):
         return SearchType.SubstanceName
 
 
-@app.route("/get_substances_for_search_term/<search_term>")
+@app.get("/get_substances_for_search_term/<search_term>")
 def get_substances_for_search_term(search_term):
     """
+    Returns substances by a search term.
+
     Takes a string containing a search term, and tries to find any DTXSIDs that
     match it, returning them along with information about the substances.
 
@@ -101,15 +152,13 @@ def get_substances_for_search_term(search_term):
     will be passed indicating the issue, along with a list of the substances
     and information about them.
 
-    Parameters
-    ----------
-    search_term : string
-        String used for searching.
-
-    Returns
-    -------
-    Either the DTXSID corresponding to the searched term, or None if no match
-    was found.
+    ---
+    parameters:
+      - in: query
+        name: search_term
+    responses:
+      200:
+        description: Operation successful
     """
     search_type = determine_search_type(search_term)
     substances = None  # default value
@@ -163,28 +212,19 @@ def get_substances_for_search_term(search_term):
     return jsonify({"ambiguity": ambiguity, "substances": substances})
 
 
-@app.route("/")
-def top_page():
-    """
-    Landing page.  Doesn't do anything useful, but it's a good check to
-    see if the app is running.
-    """
-    return "<p>Hello, World!</p>"
-
-
-@app.route("/search/<dtxsid>")
+@app.get("/search/<dtxsid>")
 def search_results(dtxsid):
     """
     Endpoint for retrieving search results of a specified DTXSID.
 
     Parameters
-    ----------
-    search_term : string
-        String used for searching.
-
-    Returns
-    -------
-    A JSON structure containing a list of records from the database.
+    ---
+    parameters:
+      - in: query
+        name: stxsid
+    responses:
+      200:
+        description: A JSON structure containing a list of records from the database.
     """
 
     id_query = db.select(Contents.internal_id).filter(Contents.dtxsid == dtxsid)
@@ -241,19 +281,19 @@ def search_results(dtxsid):
     return jsonify({"records": records, "record_type_counts": record_type_counts})
 
 
-@app.route("/get_mass_spectrum/<internal_id>")
+@app.get("/get_mass_spectrum/<internal_id>")
 def retrieve_mass_spectrum(internal_id):
     """
     Endpoint for retrieving a specified mass spectrum from the database.
 
-    Parameters
-    ----------
-    internal_id : string
-        The unique internal identifier for the spectrum that's being looked for.
-
-    Returns
-    -------
-    A JSON structure containing the information about the spectrum.
+    ---
+    parameters:
+      - in: query
+        name: internal_id
+        description: The unique internal identifier for the spectrum that's being looked for.
+    responses:
+      200:
+        description: A JSON structure containing the information about the spectrum.
     """
     q = db.select(
         MassSpectra.spectrum, MassSpectra.splash, MassSpectra.normalized_entropy, MassSpectra.spectral_entropy,
@@ -274,22 +314,19 @@ def retrieve_mass_spectrum(internal_id):
         return "Error: invalid internal id."
 
 
-@app.route("/fact_sheet_list")
+@app.get("/fact_sheet_list")
 def fact_sheet_list():
     """
-    Endpoint for retrieving a list of all of the fact sheets present in the
-    database.  The current Vue page using this is only displaying the year th
+    Endpoint for retrieving a list of all the fact sheets present in the database.
+
+    The current Vue page using this is only displaying the year th
     record was published, hence why the 'year_published' field is being
     generated.
 
-    Parameters
-    ----------
-    None.
-
-    Returns
-    -------
-    A list of dictionaries, each one corresponding to one fact sheet in the
-    database.
+    ---
+    responses:
+      200:
+        description: A list of dictionaries, each one corresponding to one fact sheet in the
     """
 
     q = db.select(
@@ -316,20 +353,15 @@ def fact_sheet_list():
     return jsonify({"results": results})
 
 
-@app.route("/method_list")
+@app.get("/method_list")
 def method_list():
     """
-    Endpoint for retrieving a list of all of the methods present in the
-    database.
+    Endpoint for retrieving a list of all the methods present in the database.
 
-    Parameters
-    ----------
-    None.
-
-    Returns
-    -------
-    A list of dictionaries, each one corresponding to one method in the
-    database.
+    ---
+    responses:
+      200:
+        description: A list of dictionaries, each one corresponding to one method in the database.
     """
 
     q = db.select(
@@ -361,23 +393,22 @@ def method_list():
     return {"results": results}
 
 
-@app.route("/get_pdf/<record_type>/<internal_id>")
+@app.get("/get_pdf/<record_type>/<internal_id>")
 def get_pdf(record_type, internal_id):
     """
     Retrieve a PDF from the database by the internal ID and type of record.
 
-    Parameters
-    ----------
-    record_type : string
-        A string indicating which kind of record is being retrieved.  Valid
-        values are 'fact sheet', 'method', and 'spectrum pdf'.
-    
-    internal_id : string
-        ID of the document in the database.
-
-    Returns
-    -------
-    The PDF being searched, in the form of an <iframe>-compatible element.
+    ---
+    parameters:
+      - in: query
+        name: record_type
+        description: A string indicating which kind of record is being retrieved.  Valid values are 'fact sheet', 'method', and 'spectrum pdf'.
+      - in: query
+        name: internal_id
+        description: ID of the document in the database.
+    responses:
+      200:
+        description: The PDF being searched, in the form of an <iframe>-compatible element.
     """
 
     pdf_content = cq.pdf_by_id(internal_id, record_type.lower())
@@ -391,26 +422,26 @@ def get_pdf(record_type, internal_id):
         return f"Error: no PDF found for internal ID '{internal_id}'."
 
 
-@app.route("/get_pdf_metadata/<record_type>/<internal_id>")
+@app.get("/get_pdf_metadata/<record_type>/<internal_id>")
 def get_pdf_metadata(record_type, internal_id):
     """
-    Retrieves metadata associated with a PDF.  Both fact sheets and methods have
+    Retrieves metadata associated with a PDF.
+
+    Both fact sheets and methods have
     associated metadata, so this uses the record_type argument to differentiate
     between them.
 
-    Parameters
-    ----------
-    record_type : string
-        A string indicating which kind of record is being retrieved.  Valid
-        values are 'fact sheet' and 'method'.
-    
-    internal_id : string
-        ID of the document in the database.
-
-    Returns
-    -------
-    A JSON structure containing the metadata, the name, and whether or not the
-    method has associated spectra.
+    ---
+    parameters:
+      - in: query
+        name: record_type
+        description: A string indicating which kind of record is being retrieved. Valid values are 'fact sheet' and 'method'.
+      - in: query
+        name: internal_id
+        description: ID of the document in the database.
+    responses:
+      200:
+        description: A JSON structure containing the metadata, the name, and whether the method has associated spectra.
     """
 
     metadata = cq.pdf_metadata(internal_id, record_type.lower())
@@ -420,22 +451,21 @@ def get_pdf_metadata(record_type, internal_id):
         return f"Error: no PDF found for internal ID '{internal_id}'."
 
 
-@app.route("/find_dtxsids/<internal_id>")
+@app.get("/find_dtxsids/<internal_id>")
 def find_dtxsids(internal_id):
     """
-    Returns a list of DTXSIDs associated with the specified internal ID, along
-    with additional substance information.  This is mostly used for pulling back
+    Returns a list of DTXSIDs associated with the specified internal ID
+    Along with additional substance information. This is mostly used for pulling back
     information on the substances listed in a method or fact sheet.
 
-    Parameters
-    ----------
-    internal_id : string
-        Database ID of the record.
-
-    Returns
-    -------
-    A JSON structure containing a list of substance information.  This will be
-    empty if no records were found.
+    ---
+    parameters:
+      - in: query
+        name: internal_id
+        description: ID of the document in the database.
+    responses:
+      200:
+        description: A JSON structure containing a list of substance information.  This will be empty if no records were found.
     """
 
     substance_list = cq.substances_for_ids(internal_id)
@@ -444,53 +474,24 @@ def find_dtxsids(internal_id):
     return jsonify({"substance_list": substance_list})
 
 
-import requests
-import urllib3
-import ssl
-
-
-class CustomHttpAdapter(requests.adapters.HTTPAdapter):
-    # "Transport adapter" that allows us to use custom ssl_context.
-
-    def __init__(self, ssl_context=None, **kwargs):
-        self.ssl_context = ssl_context
-        super().__init__(**kwargs)
-
-    def init_poolmanager(self, connections, maxsize, block=False):
-        self.poolmanager = urllib3.poolmanager.PoolManager(
-            num_pools=connections, maxsize=maxsize,
-            block=block, ssl_context=self.ssl_context)
-
-
-def get_legacy_session():
-    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-    ctx.options |= 0x4  # OP_LEGACY_SERVER_CONNECT
-    session = requests.session()
-    session.mount('https://', CustomHttpAdapter(ctx))
-    return session
-
-
-@app.route("/substance_similarity_search/<dtxsid>")
+@app.get("/substance_similarity_search/<dtxsid>")
 def find_similar_substances(dtxsid, similarity_threshold=0.8):
     """
-    Makes a call to an EPA-built API for substance similarity and returns the
-    list of DTXSIDs of substances with a similarity measure at or above the
+    Makes a call to an EPA-built API for substance similarity
+     And returns the list of DTXSIDs of substances with a similarity measure at or above the
     `similarity_threshold` parameter.
 
-    Parameters
-    ----------
-    dtxsid : string
-        The DTXSID to search on.
-    
-    similarity_threshold : float
-        A value from 0 to 1, sent to an EPA API as a threshold for how similar
-        the substances you're searching for should be.  Higher values will return
-        only highly similar substances.
-
-
-    Returns
-    -------
-    A list of similar substances, or None if none were found.
+    ---
+    parameters:
+      - in: query
+        name: dtxsid
+        description: The DTXSID to search on.
+      - in: query
+        name: similarity_threshold
+        description: A value from 0 to 1, sent to an EPA API as a threshold for how similar the substances you're searching for should be.  Higher values will return only highly similar substances.
+    responses:
+      200:
+        description: A list of similar substances, or None if none were found.
     """
 
     BASE_URL = f"{ccte_api_server}/similar-compound/by-dtxsid/"
@@ -508,23 +509,20 @@ def find_similar_substances(dtxsid, similarity_threshold=0.8):
         return {"similar_substance_info": None}
 
 
-@app.route("/get_similar_structures/<dtxsid>")
+@app.get("/get_similar_structures/<dtxsid>")
 def get_similar_structures(dtxsid):
     """
-    Searches the database for all methods which contain at least one substance
-    of sufficient similarity to the searched substance.  The searched similarity
-    level is hardcoded here, and I currently have no plans to make it
-    adjustable by the app.
+    Searches the database for all methods which contain at least one substance of sufficient similarity to the searched substance.
+    The searched similarity level is hardcoded here, and I currently have no plans to make it adjustable by the app.
 
-    Parameters
-    ----------
-    dtxsid : string
-        A DTXSID to search on.
-
-
-    Returns
-    -------
-    A JSON structure containing information on the related methods.
+    ---
+    parameters:
+      - in: query
+        name: dtxsid
+        description: The DTXSID to search on.
+    responses:
+      200:
+        description: A JSON structure containing information on the related methods.
     """
     similar_substance_info = find_similar_substances(dtxsid, similarity_threshold=0.5)["similar_substance_info"]
     if similar_substance_info is None:
@@ -752,7 +750,7 @@ def batch_search():
 @app.post("/analytical_qc_batch_search")
 def analytical_qc_batch_search():
     """
-    Receives a list of DTXSIDs and returns information on all Analytical QC 
+    Receives a list of DTXSIDs and returns information on all Analytical QC
     records that contain those DTXSIDs.
     """
     parameters = request.get_json()
@@ -850,12 +848,23 @@ def analytical_qc_batch_search():
     return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
 
 
-@app.route("/method_with_spectra/<search_type>/<internal_id>")
+@app.get("/method_with_spectra/<search_type>/<internal_id>")
 def method_with_spectra_search(search_type, internal_id):
     """
     Attempts to return information about a method with linked spectra.
-    Searching is done using the internal ID of either the method or one of its
-    spectra.
+    Searching is done using the internal ID of either the method or one of its spectra.
+
+    ---
+    parameters:
+      - in: query
+        name: search_type
+        description: Search type
+      - in: query
+        name: internal_id
+        description: The unique internal identifier for the spectrum that's being looked for.
+    responses:
+      200:
+        description: A JSON structure containing the information about the spectrum.
     """
     if search_type == "spectrum":
         q = db.select(MethodsWithSpectra.method_id).filter(MethodsWithSpectra.spectrum_id == internal_id)
@@ -1017,7 +1026,7 @@ def max_similarity_by_dtxsid():
     The scores will be the highest similarity score computed on the user-
     supplied spectrum and all spectra in this database for that DTXSID.  If no
     spectra were found, the DTXSID will map to None.
-    
+
     This access point is intended to be used by CFMID.
     """
     request_json = request.get_json()
@@ -1109,7 +1118,7 @@ def all_similarities_by_dtxsid():
     return jsonify({"results": similarity_list})
 
 
-@app.route("/get_info_by_id/<internal_id>")
+@app.get("/get_info_by_id/<internal_id>")
 def get_info_by_id(internal_id):
     q = db.select(RecordInfo).filter(RecordInfo.internal_id == internal_id)
     result = db.session.execute(q).first()
@@ -1119,7 +1128,7 @@ def get_info_by_id(internal_id):
         return jsonify({"result": None})
 
 
-@app.route("/database_summary/")
+@app.get("/database_summary/")
 def database_summary():
     summary_info = cq.database_summary()
     return jsonify(summary_info)
@@ -1136,7 +1145,7 @@ def mass_spectra_for_substances():
     return jsonify({"spectra": spectrum_results, "substance_mapping": names_for_dtxsids})
 
 
-@app.route("/get_image_for_dtxsid/<dtxsid>")
+@app.get("/get_image_for_dtxsid/<dtxsid>")
 def get_image_for_dtxsid(dtxsid):
     """
     Retrieves a substance's image from the database.
@@ -1153,7 +1162,7 @@ def get_image_for_dtxsid(dtxsid):
         return Response(status=204)
 
 
-@app.route("/substring_search/<substring>")
+@app.get("/substring_search/<substring>")
 def substring_search(substring):
     """
     Searches the database for substances by substring.  Both the
@@ -1182,7 +1191,7 @@ def substring_search(substring):
     return jsonify({"substances": full_info})
 
 
-@app.route("/get_ms_ready_methods/<inchikey>")
+@app.get("/get_ms_ready_methods/<inchikey>")
 def get_ms_ready_methods(inchikey):
     """
     Retrieves a list of methods that contain the MS-Ready forms of a
@@ -1219,7 +1228,7 @@ def get_ms_ready_methods(inchikey):
     return jsonify({"length": len(results), "results": results})
 
 
-@app.route("/get_substance_file_for_record/<internal_id>")
+@app.get("/get_substance_file_for_record/<internal_id>")
 def get_substance_file_for_record(internal_id):
     """
     Creates an Excel workbook listing the substances in the specified
@@ -1235,7 +1244,7 @@ def get_substance_file_for_record(internal_id):
     return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
 
 
-@app.route("/analytical_qc_list/")
+@app.get("/analytical_qc_list/")
 def analytical_qc_list():
     """
     Retrieves information on all of the AnalyticalQC PDFs in the database.
@@ -1255,7 +1264,7 @@ def analytical_qc_list():
     return jsonify({"results": results})
 
 
-@app.route("/additional_sources_for_substance/<dtxsid>")
+@app.get("/additional_sources_for_substance/<dtxsid>")
 def additional_sources_for_substance(dtxsid):
     """
     Retrieves links for supplemental sources (e.g., Wikipedia, ChemExpo) for a
@@ -1271,12 +1280,12 @@ def retrieve_nmr_spectrum(internal_id):
     Endpoint for retrieving a specified NMR spectrum from the database.
 
     Parameters
-    ----------
+    --
     internal_id : string
         The unique internal identifier for the spectrum that's being looked for.
 
     Returns
-    -------
+    --
     A JSON structure containing the information about the spectrum.
     """
     q = db.select(
@@ -1293,7 +1302,7 @@ def retrieve_nmr_spectrum(internal_id):
         return "Error: invalid internal id."
 
 
-@app.route("/get_classification_for_dtxsid/<dtxsid>")
+@app.get("/get_classification_for_dtxsid/<dtxsid>")
 def get_classification_for_dtxsid(dtxsid):
     classification_info = cq.classyfire_for_dtxsid(dtxsid)
     if classification_info is not None:
@@ -1354,7 +1363,7 @@ def next_level_classification():
     return jsonify({"values": possible_values})
 
 
-@app.route("/fact_sheets_for_substance/<dtxsid>")
+@app.get("/fact_sheets_for_substance/<dtxsid>")
 def fact_sheets_for_substance(dtxsid):
     """
     Returns a list of fact sheets that are associated with the given DTXSID.
@@ -1364,7 +1373,7 @@ def fact_sheets_for_substance(dtxsid):
     return jsonify({"internal_ids": fact_sheet_ids})
 
 
-@app.route("/get_data_source_info/")
+@app.get("/get_data_source_info/")
 def data_source_info():
     """
     Returns a list of major data sources in AMOS with some supplemental information.
@@ -1373,7 +1382,7 @@ def data_source_info():
     return [c[0].get_row_contents() for c in db.session.execute(query).all()]
 
 
-@app.route("/record_id_search/<internal_id>")
+@app.get("/record_id_search/<internal_id>")
 def record_id_search(internal_id):
     id_query = db.select(RecordInfo.record_type, RecordInfo.data_type, RecordInfo.link).filter(
         RecordInfo.internal_id == internal_id)
@@ -1384,7 +1393,7 @@ def record_id_search(internal_id):
         return jsonify({"record_type": None, "data_type": None, "link": None})
 
 
-@app.route("/functional_uses_for_dtxsid/<dtxsid>")
+@app.get("/functional_uses_for_dtxsid/<dtxsid>")
 def functional_uses_for_dtxsid(dtxsid):
     """query = db.select(FunctionalUseClasses.functional_classes).filter(FunctionalUseClasses.dtxsid==dtxsid)
     result = db.session.execute(query).first()
@@ -1396,14 +1405,14 @@ def functional_uses_for_dtxsid(dtxsid):
     return jsonify({"functional_classes": functional_use_dict.get(dtxsid, None)})
 
 
-@app.route("/dtxsids_for_functional_use/<functional_use>")
+@app.get("/dtxsids_for_functional_use/<functional_use>")
 def dtxsids_for_functional_use(functional_use):
     query = db.select(FunctionalUseClasses.dtxsid).filter(FunctionalUseClasses.functional_classes.any(functional_use))
     dtxsid_list = [c.dtxsid for c in db.session.execute(query).all()]
     return jsonify({"dtxsids": dtxsid_list})
 
 
-@app.route("/formula_search/<formula>")
+@app.get("/formula_search/<formula>")
 def formula_search(formula):
     substances = cq.formula_search(formula)
     dtxsids = [s["dtxsid"] for s in substances]
@@ -1412,7 +1421,7 @@ def formula_search(formula):
     return jsonify({"substances": full_info})
 
 
-@app.route("/inchikey_first_block_search/<first_block>")
+@app.get("/inchikey_first_block_search/<first_block>")
 def inchikey_first_block_search(first_block):
     substances = cq.inchikey_first_block_search(first_block)
     dtxsids = [s["dtxsid"] for s in substances]
@@ -1421,7 +1430,7 @@ def inchikey_first_block_search(first_block):
     return jsonify({"substances": full_info})
 
 
-@app.route("/get_ir_spectrum/<internal_id>")
+@app.get("/get_ir_spectrum/<internal_id>")
 def get_ir_spectrum(internal_id):
     q = db.select(
         InfraredSpectra.first_x, InfraredSpectra.intensities, InfraredSpectra.ir_type,
@@ -1447,7 +1456,7 @@ def mass_range_search():
     return jsonify({"substances": full_info})
 
 
-@app.route("/record_type_count/<record_type>")
+@app.get("/record_type_count/<record_type>")
 def record_type_count(record_type):
     possible_record_types = {"fact_sheets", "methods"}
     if record_type in possible_record_types:
