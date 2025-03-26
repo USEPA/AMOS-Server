@@ -76,7 +76,7 @@ def get_swagger():
 
 
 # Swagger UI route
-SWAGGER_URL = '/api/amos/swagger-ui'
+SWAGGER_URL = '/api/amos/swagger'
 API_URL = '/api/amos/swagger.json'
 swaggerui_blueprint = get_swaggerui_blueprint(
     SWAGGER_URL,
