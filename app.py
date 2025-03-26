@@ -156,6 +156,7 @@ def get_substances_for_search_term(search_term):
     parameters:
       - in: query
         name: search_term
+        type: string
     responses:
       200:
         description: Operation successful
@@ -222,6 +223,7 @@ def search_results(dtxsid):
     parameters:
       - in: query
         name: stxsid
+        type: string
     responses:
       200:
         description: A JSON structure containing a list of records from the database.
@@ -290,6 +292,7 @@ def retrieve_mass_spectrum(internal_id):
     parameters:
       - in: query
         name: internal_id
+        type: integer
         description: The unique internal identifier for the spectrum that's being looked for.
     responses:
       200:
@@ -402,9 +405,11 @@ def get_pdf(record_type, internal_id):
     parameters:
       - in: query
         name: record_type
+        type: string
         description: A string indicating which kind of record is being retrieved.  Valid values are 'fact sheet', 'method', and 'spectrum pdf'.
       - in: query
         name: internal_id
+        type: integer
         description: ID of the document in the database.
     responses:
       200:
@@ -435,9 +440,11 @@ def get_pdf_metadata(record_type, internal_id):
     parameters:
       - in: query
         name: record_type
+        type: string
         description: A string indicating which kind of record is being retrieved. Valid values are 'fact sheet' and 'method'.
       - in: query
         name: internal_id
+        type: integer
         description: ID of the document in the database.
     responses:
       200:
@@ -462,6 +469,7 @@ def find_dtxsids(internal_id):
     parameters:
       - in: query
         name: internal_id
+        type: integer
         description: ID of the document in the database.
     responses:
       200:
@@ -485,9 +493,11 @@ def find_similar_substances(dtxsid, similarity_threshold=0.8):
     parameters:
       - in: query
         name: dtxsid
+        type: string
         description: The DTXSID to search on.
       - in: query
         name: similarity_threshold
+        type: float
         description: A value from 0 to 1, sent to an EPA API as a threshold for how similar the substances you're searching for should be.  Higher values will return only highly similar substances.
     responses:
       200:
@@ -519,6 +529,7 @@ def get_similar_structures(dtxsid):
     parameters:
       - in: query
         name: dtxsid
+        type: string
         description: The DTXSID to search on.
     responses:
       200:
@@ -858,9 +869,11 @@ def method_with_spectra_search(search_type, internal_id):
     parameters:
       - in: query
         name: search_type
+        type: string
         description: Search type
       - in: query
         name: internal_id
+        type: integer
         description: The unique internal identifier for the spectrum that's being looked for.
     responses:
       200:
