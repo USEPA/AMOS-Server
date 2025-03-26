@@ -49,3 +49,4 @@ urllib3==2.2.2
 waitress==3.0.2
 flask-restful
 flask-swagger
+flask_swagger_ui
