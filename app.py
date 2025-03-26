@@ -82,7 +82,7 @@ swaggerui_blueprint = get_swaggerui_blueprint(
     SWAGGER_URL,
     API_URL,
     config={
-        'app_name': "My API"
+        'app_name': "AMOS API"
     }
 )
 
