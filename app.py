@@ -607,6 +607,53 @@ def batch_search():
     database that contain those DTXSIDs.  If a record contains more than one of
     the searched DTXSIDs, then that record will appear once for each searched
     substance it contains.
+    ---
+    parameters:
+      - in: body
+        name: base_url
+        required: true
+      - in: body
+        name: dtxsids
+        required: true
+        schema:
+          type: array
+          items:
+            type: string
+      - in: body
+        name: include_classyfire
+        required: true
+      - in: body
+        name: include_external_links
+        required: true
+      - in: body
+        name: methodologies
+        required: true
+        schema:
+          type: array
+          items:
+            type: string
+      - in: body
+        name: record_types
+        required: true
+        schema:
+          type: array
+          items:
+            type: string
+      - in: body
+        name: additional_record_info
+        required: true
+      - in: body
+        name: include_source_counts
+        required: true
+      - in: body
+        name: include_functional_uses
+        required: true
+      - in: body
+        name: always_download_file
+        required: true
+    responses:
+      200:
+        description: OK
     """
     parameters = request.get_json()
     base_url = parameters["base_url"]
@@ -758,8 +805,42 @@ def batch_search():
 @app.post("/api/amos/analytical_qc_batch_search")
 def analytical_qc_batch_search():
     """
-    Receives a list of DTXSIDs and returns information on all Analytical QC
-    records that contain those DTXSIDs.
+    Receives a list of DTXSIDs
+    And returns information on all Analytical QC records that contain those DTXSIDs.
+    ---
+    parameters:
+      - in: body
+        name: base_url
+        required: true
+      - in: body
+        name: dtxsids
+        required: true
+        schema:
+          type: array
+          items:
+            type: string
+      - in: body
+        name: include_classyfire
+        required: true
+      - in: body
+        name: include_source_counts
+        required: true
+      - in: body
+        name: methodologies
+        required: true
+        schema:
+          type: array
+          items:
+            type: string
+      - in: body
+        name: include_source_counts
+        required: true
+      - in: body
+        name: include_functional_uses
+        required: true
+    responses:
+      200:
+        description: OK
     """
     parameters = request.get_json()
     dtxsid_list = parameters["dtxsids"]
@@ -905,16 +986,26 @@ def method_with_spectra_search(search_type, internal_id):
 @app.post("/api/amos/spectrum_count_for_methodology/")
 def get_spectrum_count_for_methodology():
     """
-    Endpoint for getting a count of spectrum records that have the specified
-    methodology as one of its methodologies.  (A few data sources can have
-    multiple methodologies.)
+    Endpoint for getting a count of spectrum records that have the specified methodology as one of its methodologies.
+    (A few data sources can have multiple methodologies.)
 
     Note that parameters are currently handled by a POST rather than in the URL
     (like most of the other functions here) due to the fact that a lot of
     methodologies have forward slashes in them (e.g., 'LC/MS'), which disrupts
     Flask's routing.
 
-    Currently intended for use with applications outside of the Vue app.
+    Currently intended for use with applications outside the Vue app.
+    ---
+    parameters:
+      - in: body
+        name: dtxsid
+        required: true
+      - in: body
+        name: spectrum_type
+        required: true
+    responses:
+      200:
+        description: OK
     """
 
     dtxsid = request.get_json()["dtxsid"]
@@ -930,8 +1021,19 @@ def get_spectrum_count_for_methodology():
 @app.post("/api/amos/substances_for_ids/")
 def get_substances_for_ids():
     """
-    Accepts a list of internal_ids (via POST) and returns a deduplicated list substances
-    that appear in those records.
+    Accepts a list of internal_ids (via POST) and returns a deduplicated list substances that appear in those records.
+    ---
+    parameters:
+      - in: body
+        name: internal_id_list
+        required: true
+        schema:
+          type: array
+          items:
+            type: string
+    responses:
+      200:
+        description: OK
     """
 
     internal_id_list = request.get_json()["internal_id_list"]
@@ -949,6 +1051,18 @@ def get_substances_for_ids():
 def count_substances_in_ids():
     """
     Counts the number of unique substances seen in a given set of internal IDs.
+    ---
+    parameters:
+      - in: body
+        name: internal_id_list
+        required: true
+        schema:
+          type: array
+          items:
+            type: string
+    responses:
+      200:
+        description: OK
     """
     internal_id_list = request.get_json()["internal_id_list"]
     q = db.select(func.count(Contents.dtxsid.distinct())).filter(Contents.internal_id.in_(internal_id_list))
@@ -959,9 +1073,26 @@ def count_substances_in_ids():
 @app.post("/api/amos/mass_spectrum_similarity_search/")
 def mass_spectrum_similarity_search():
     """
-    Takes a mass range, methodology, and mass spectrum, and returns all spectra
-    that match the mass and methodology, with entropy similarities between the
-    database spectra and the user-supplied one.
+    Takes a mass range, methodology, and mass spectrum, and returns all spectra that match the mass and methodology, with entropy similarities between the database spectra and the user-supplied one.
+    ---
+    parameters:
+      - in: body
+        name: lower_mass_limit
+        required: true
+      - in: body
+        name: upper_mass_limit
+        required: true
+      - in: body
+        name: methodology
+        required: true
+      - in: body
+        name: spectrum
+        required: true
+        schema:
+          type: object
+    responses:
+      200:
+        description: OK
     """
     request_json = request.get_json()
     lower_mass_limit = request_json["lower_mass_limit"]
@@ -992,6 +1123,16 @@ def mass_spectrum_similarity_search():
 def spectral_entropy():
     """
     Calculates the spectral entropy for a single spectrum.
+    ---
+    parameters:
+      - in: body
+        name: spectrum
+        required: true
+        schema:
+          type: object
+    responses:
+      200:
+        description: OK
     """
     entropy = spectrum.calculate_spectral_entropy(request.get_json()["spectrum"])
     return jsonify({"entropy": entropy})
@@ -1019,9 +1160,19 @@ def entropy_similarity():
 @app.post("/api/amos/record_counts_by_dtxsid/")
 def get_record_counts_by_dtxsid():
     """
-    Takes a list of DTXSIDs as the POST argument, and for each DTXSID, it
-    returns a dictionary containing the counts of record types that are present
-    in the database.
+    Takes a list of DTXSIDs as the POST argument, and for each DTXSID, it returns a dictionary containing the counts of record types that are present in the database.
+    ---
+    parameters:
+      - in: body
+        name: dtxsids
+        required: true
+        schema:
+          type: array
+          items:
+            type: string
+    responses:
+      200:
+        description: OK
     """
     dtxsid_list = request.get_json()["dtxsids"]
     record_count_dict = cq.record_counts_by_dtxsid(dtxsid_list)
@@ -1031,13 +1182,24 @@ def get_record_counts_by_dtxsid():
 @app.post("/api/amos/max_similarity_by_dtxsid/")
 def max_similarity_by_dtxsid():
     """
-    This endpoint allows a user to submit a list of DTXSIDs and a mass spectrum.  In
-    response, the user will get back the DTXSIDs mapped to similarity scores.
-    The scores will be the highest similarity score computed on the user-
-    supplied spectrum and all spectra in this database for that DTXSID.  If no
-    spectra were found, the DTXSID will map to None.
+    This endpoint allows a user to submit a list of DTXSIDs and a mass spectrum.
+    In response, the user will get back the DTXSIDs mapped to similarity scores.
+    The scores will be the highest similarity score computed on the user-supplied spectrum and all spectra in this database for that DTXSID.
+    If no spectra were found, the DTXSID will map to None.
 
     This access point is intended to be used by CFMID.
+    ---
+    parameters:
+      - in: body
+        name: dtxsids
+        required: true
+        schema:
+          type: array
+          items:
+            type: string
+    responses:
+      200:
+        description: OK
     """
     request_json = request.get_json()
     dtxsids = request_json["dtxsids"]
@@ -1167,6 +1329,18 @@ def database_summary():
 def mass_spectra_for_substances():
     """
     Given a list of DTXSIDs, return all spectra for those substances.
+    ---
+    parameters:
+      - in: body
+        name: dtxsids
+        required: true
+        schema:
+          type: array
+          items:
+            type: string
+    responses:
+      200:
+        description: OK
     """
     dtxsids = request.get_json()["dtxsids"]
     spectrum_results = cq.mass_spectra_for_substances(dtxsids)
