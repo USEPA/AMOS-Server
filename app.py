@@ -11,7 +11,6 @@ import sentry_sdk
 import urllib3
 from flask import Flask, jsonify, make_response, request, Response
 from flask_cors import CORS
-from flask_restful import Api
 from flask_swagger import swagger
 from flask_swagger_ui import get_swaggerui_blueprint
 from sentry_sdk.integrations.flask import FlaskIntegration
@@ -64,10 +63,9 @@ ccte_api_server = os.environ['CCTE_API_SERVER']
 ccte_api_key = os.environ['CCTE_API_KEY']
 
 app = Flask(__name__)
-api = Api(app)
 
 
-@app.route('/api/amos/swagger.json')
+@app.get('/api/amos/swagger.json')
 def get_swagger():
     swag = swagger(app)
     swag['info']['version'] = "1.0"
@@ -117,8 +115,7 @@ class SearchType(Enum):
 
 def determine_search_type(search_term):
     """
-    Determine whether the search term in question is an InChIKey, CAS number, or
-    a name.
+    Determine whether the search term in question is an InChIKey, CAS number, or a name.
     --
     search_term : string
         String used for searching.
@@ -139,7 +136,7 @@ def determine_search_type(search_term):
         return SearchType.SubstanceName
 
 
-@app.get("/get_substances_for_search_term/<search_term>")
+@app.get("/api/amos/get_substances_for_search_term/<search_term>")
 def get_substances_for_search_term(search_term):
     """
     Returns substances by a search term.
@@ -154,7 +151,7 @@ def get_substances_for_search_term(search_term):
 
     ---
     parameters:
-      - in: query
+      - in: path
         name: search_term
         type: string
     responses:
@@ -213,7 +210,7 @@ def get_substances_for_search_term(search_term):
     return jsonify({"ambiguity": ambiguity, "substances": substances})
 
 
-@app.get("/search/<dtxsid>")
+@app.get("/api/amos/search/<dtxsid>")
 def search_results(dtxsid):
     """
     Endpoint for retrieving search results of a specified DTXSID.
@@ -221,7 +218,7 @@ def search_results(dtxsid):
     Parameters
     ---
     parameters:
-      - in: query
+      - in: path
         name: stxsid
         type: string
     responses:
@@ -283,14 +280,14 @@ def search_results(dtxsid):
     return jsonify({"records": records, "record_type_counts": record_type_counts})
 
 
-@app.get("/get_mass_spectrum/<internal_id>")
+@app.get("/api/amos/get_mass_spectrum/<internal_id>")
 def retrieve_mass_spectrum(internal_id):
     """
     Endpoint for retrieving a specified mass spectrum from the database.
 
     ---
     parameters:
-      - in: query
+      - in: path
         name: internal_id
         type: integer
         description: The unique internal identifier for the spectrum that's being looked for.
@@ -317,7 +314,7 @@ def retrieve_mass_spectrum(internal_id):
         return "Error: invalid internal id."
 
 
-@app.get("/fact_sheet_list")
+@app.get("/api/amos/fact_sheet_list")
 def fact_sheet_list():
     """
     Endpoint for retrieving a list of all the fact sheets present in the database.
@@ -356,7 +353,7 @@ def fact_sheet_list():
     return jsonify({"results": results})
 
 
-@app.get("/method_list")
+@app.get("/api/amos/method_list")
 def method_list():
     """
     Endpoint for retrieving a list of all the methods present in the database.
@@ -396,18 +393,18 @@ def method_list():
     return {"results": results}
 
 
-@app.get("/get_pdf/<record_type>/<internal_id>")
+@app.get("/api/amos/get_pdf/<record_type>/<internal_id>")
 def get_pdf(record_type, internal_id):
     """
     Retrieve a PDF from the database by the internal ID and type of record.
 
     ---
     parameters:
-      - in: query
+      - in: path
         name: record_type
         type: string
         description: A string indicating which kind of record is being retrieved.  Valid values are 'fact sheet', 'method', and 'spectrum pdf'.
-      - in: query
+      - in: path
         name: internal_id
         type: integer
         description: ID of the document in the database.
@@ -427,7 +424,7 @@ def get_pdf(record_type, internal_id):
         return f"Error: no PDF found for internal ID '{internal_id}'."
 
 
-@app.get("/get_pdf_metadata/<record_type>/<internal_id>")
+@app.get("/api/amos/get_pdf_metadata/<record_type>/<internal_id>")
 def get_pdf_metadata(record_type, internal_id):
     """
     Retrieves metadata associated with a PDF.
@@ -438,11 +435,11 @@ def get_pdf_metadata(record_type, internal_id):
 
     ---
     parameters:
-      - in: query
+      - in: path
         name: record_type
         type: string
         description: A string indicating which kind of record is being retrieved. Valid values are 'fact sheet' and 'method'.
-      - in: query
+      - in: path
         name: internal_id
         type: integer
         description: ID of the document in the database.
@@ -458,7 +455,7 @@ def get_pdf_metadata(record_type, internal_id):
         return f"Error: no PDF found for internal ID '{internal_id}'."
 
 
-@app.get("/find_dtxsids/<internal_id>")
+@app.get("/api/amos/find_dtxsids/<internal_id>")
 def find_dtxsids(internal_id):
     """
     Returns a list of DTXSIDs associated with the specified internal ID
@@ -467,7 +464,7 @@ def find_dtxsids(internal_id):
 
     ---
     parameters:
-      - in: query
+      - in: path
         name: internal_id
         type: integer
         description: ID of the document in the database.
@@ -482,7 +479,7 @@ def find_dtxsids(internal_id):
     return jsonify({"substance_list": substance_list})
 
 
-@app.get("/substance_similarity_search/<dtxsid>")
+@app.get("/api/amos/substance_similarity_search/<dtxsid>")
 def find_similar_substances(dtxsid, similarity_threshold=0.8):
     """
     Makes a call to an EPA-built API for substance similarity
@@ -491,11 +488,11 @@ def find_similar_substances(dtxsid, similarity_threshold=0.8):
 
     ---
     parameters:
-      - in: query
+      - in: path
         name: dtxsid
         type: string
         description: The DTXSID to search on.
-      - in: query
+      - in: path
         name: similarity_threshold
         type: float
         description: A value from 0 to 1, sent to an EPA API as a threshold for how similar the substances you're searching for should be.  Higher values will return only highly similar substances.
@@ -519,7 +516,7 @@ def find_similar_substances(dtxsid, similarity_threshold=0.8):
         return {"similar_substance_info": None}
 
 
-@app.get("/get_similar_structures/<dtxsid>")
+@app.get("/api/amos/get_similar_structures/<dtxsid>")
 def get_similar_structures(dtxsid):
     """
     Searches the database for all methods which contain at least one substance of sufficient similarity to the searched substance.
@@ -527,7 +524,7 @@ def get_similar_structures(dtxsid):
 
     ---
     parameters:
-      - in: query
+      - in: path
         name: dtxsid
         type: string
         description: The DTXSID to search on.
@@ -603,7 +600,7 @@ def get_similar_structures(dtxsid):
     })
 
 
-@app.post("/batch_search")
+@app.post("/api/amos/batch_search")
 def batch_search():
     """
     Receives a list of DTXSIDs and returns information on all records in the
@@ -758,7 +755,7 @@ def batch_search():
     return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
 
 
-@app.post("/analytical_qc_batch_search")
+@app.post("/api/amos/analytical_qc_batch_search")
 def analytical_qc_batch_search():
     """
     Receives a list of DTXSIDs and returns information on all Analytical QC
@@ -859,7 +856,7 @@ def analytical_qc_batch_search():
     return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
 
 
-@app.get("/method_with_spectra/<search_type>/<internal_id>")
+@app.get("/api/amos/method_with_spectra/<search_type>/<internal_id>")
 def method_with_spectra_search(search_type, internal_id):
     """
     Attempts to return information about a method with linked spectra.
@@ -867,11 +864,11 @@ def method_with_spectra_search(search_type, internal_id):
 
     ---
     parameters:
-      - in: query
+      - in: path
         name: search_type
         type: string
         description: Search type
-      - in: query
+      - in: path
         name: internal_id
         type: integer
         description: The unique internal identifier for the spectrum that's being looked for.
@@ -905,7 +902,7 @@ def method_with_spectra_search(search_type, internal_id):
     return jsonify({"method_id": method_id, "spectrum_ids": spectrum_list, "info": info_entries})
 
 
-@app.post("/spectrum_count_for_methodology/")
+@app.post("/api/amos/spectrum_count_for_methodology/")
 def get_spectrum_count_for_methodology():
     """
     Endpoint for getting a count of spectrum records that have the specified
@@ -930,7 +927,7 @@ def get_spectrum_count_for_methodology():
     return jsonify({"count": len(db.session.execute(q).all())})
 
 
-@app.post("/substances_for_ids/")
+@app.post("/api/amos/substances_for_ids/")
 def get_substances_for_ids():
     """
     Accepts a list of internal_ids (via POST) and returns a deduplicated list substances
@@ -948,7 +945,7 @@ def get_substances_for_ids():
     return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
 
 
-@app.post("/count_substances_in_ids/")
+@app.post("/api/amos/count_substances_in_ids/")
 def count_substances_in_ids():
     """
     Counts the number of unique substances seen in a given set of internal IDs.
@@ -959,7 +956,7 @@ def count_substances_in_ids():
     return jsonify(dtxsid_count)
 
 
-@app.post("/mass_spectrum_similarity_search/")
+@app.post("/api/amos/mass_spectrum_similarity_search/")
 def mass_spectrum_similarity_search():
     """
     Takes a mass range, methodology, and mass spectrum, and returns all spectra
@@ -991,7 +988,7 @@ def mass_spectrum_similarity_search():
                     "substance_mapping": substance_mapping})
 
 
-@app.post("/spectral_entropy/")
+@app.post("/api/amos/spectral_entropy/")
 def spectral_entropy():
     """
     Calculates the spectral entropy for a single spectrum.
@@ -1000,7 +997,7 @@ def spectral_entropy():
     return jsonify({"entropy": entropy})
 
 
-@app.post("/entropy_similarity/")
+@app.post("/api/amos/entropy_similarity/")
 def entropy_similarity():
     """
     Calculates the entropy similarity for two spectra.
@@ -1019,7 +1016,7 @@ def entropy_similarity():
     return jsonify({"similarity": similarity})
 
 
-@app.post("/record_counts_by_dtxsid/")
+@app.post("/api/amos/record_counts_by_dtxsid/")
 def get_record_counts_by_dtxsid():
     """
     Takes a list of DTXSIDs as the POST argument, and for each DTXSID, it
@@ -1031,7 +1028,7 @@ def get_record_counts_by_dtxsid():
     return jsonify(record_count_dict)
 
 
-@app.post("/max_similarity_by_dtxsid/")
+@app.post("/api/amos/max_similarity_by_dtxsid/")
 def max_similarity_by_dtxsid():
     """
     This endpoint allows a user to submit a list of DTXSIDs and a mass spectrum.  In
@@ -1072,7 +1069,7 @@ def max_similarity_by_dtxsid():
     return jsonify({"results": substance_dict})
 
 
-@app.post("/all_similarities_by_dtxsid/")
+@app.post("/api/amos/all_similarities_by_dtxsid/")
 def all_similarities_by_dtxsid():
     request_json = request.get_json()
     dtxsids = request_json["dtxsids"]
@@ -1131,13 +1128,13 @@ def all_similarities_by_dtxsid():
     return jsonify({"results": similarity_list})
 
 
-@app.get("/get_info_by_id/<internal_id>")
+@app.get("/api/amos/get_info_by_id/<internal_id>")
 def get_info_by_id(internal_id):
     """
     Return information by internal record id
     ---
     parameters:
-      - in: query
+      - in: path
         name: internal_id
         type: integer
         description: ID of the document in the database.
@@ -1153,7 +1150,7 @@ def get_info_by_id(internal_id):
         return jsonify({"result": None})
 
 
-@app.get("/database_summary/")
+@app.get("/api/amos/database_summary/")
 def database_summary():
     """
     Return database summary information
@@ -1166,7 +1163,7 @@ def database_summary():
     return jsonify(summary_info)
 
 
-@app.post("/mass_spectra_for_substances/")
+@app.post("/api/amos/mass_spectra_for_substances/")
 def mass_spectra_for_substances():
     """
     Given a list of DTXSIDs, return all spectra for those substances.
@@ -1177,13 +1174,13 @@ def mass_spectra_for_substances():
     return jsonify({"spectra": spectrum_results, "substance_mapping": names_for_dtxsids})
 
 
-@app.get("/get_image_for_dtxsid/<dtxsid>")
+@app.get("/api/amos/get_image_for_dtxsid/<dtxsid>")
 def get_image_for_dtxsid(dtxsid):
     """
     Retrieves a substance's image from the database.
     ---
     parameters:
-      - in: query
+      - in: path
         name: dtxsid
         type: string
         description: DTXSID of the substance.
@@ -1203,7 +1200,7 @@ def get_image_for_dtxsid(dtxsid):
         return Response(status=204)
 
 
-@app.get("/substring_search/<substring>")
+@app.get("/api/amos/substring_search/<substring>")
 def substring_search(substring):
     """
     Searches the database for substances by substring.
@@ -1212,7 +1209,7 @@ def substring_search(substring):
     record counts for each substance.
     ---
     parameters:
-      - in: query
+      - in: path
         name: substring
         type: string
         description: A string to search by
@@ -1241,14 +1238,14 @@ def substring_search(substring):
     return jsonify({"substances": full_info})
 
 
-@app.get("/get_ms_ready_methods/<inchikey>")
+@app.get("/api/amos/get_ms_ready_methods/<inchikey>")
 def get_ms_ready_methods(inchikey):
     """
     Retrieves a list of methods that contain the MS-Ready forms of a given substance but not the substance itself.
     These methods are found by looking for substances which match the first block of the given InChIKey.
     ---
     parameters:
-      - in: query
+      - in: path
         name: inchikey
         type: string
         description: InChIKey to search by
@@ -1285,13 +1282,13 @@ def get_ms_ready_methods(inchikey):
     return jsonify({"length": len(results), "results": results})
 
 
-@app.get("/get_substance_file_for_record/<internal_id>")
+@app.get("/api/amos/get_substance_file_for_record/<internal_id>")
 def get_substance_file_for_record(internal_id):
     """
     Creates an Excel workbook listing the substances in the specified record.
     ---
     parameters:
-      - in: query
+      - in: path
         name: internal_id
         type: integer
         description: Internal database ID of the record.
@@ -1309,7 +1306,7 @@ def get_substance_file_for_record(internal_id):
     return Response(excel_file, mimetype="application/vnd.ms-excel", headers=headers)
 
 
-@app.get("/analytical_qc_list/")
+@app.get("/api/amos/analytical_qc_list/")
 def analytical_qc_list():
     """
     Retrieves information on all the AnalyticalQC PDFs in the database.
@@ -1333,13 +1330,13 @@ def analytical_qc_list():
     return jsonify({"results": results})
 
 
-@app.get("/additional_sources_for_substance/<dtxsid>")
+@app.get("/api/amos/additional_sources_for_substance/<dtxsid>")
 def additional_sources_for_substance(dtxsid):
     """
     Retrieves links for supplemental sources (e.g., Wikipedia, ChemExpo) for a given DTXSID.
     ---
     parameters:
-      - in: query
+      - in: path
         name: dtxsid
         type: string
         description: DTXSID of the substance.
@@ -1351,13 +1348,13 @@ def additional_sources_for_substance(dtxsid):
     return jsonify(sources)
 
 
-@app.route("/get_nmr_spectrum/<internal_id>")
+@app.route("/api/amos/get_nmr_spectrum/<internal_id>")
 def retrieve_nmr_spectrum(internal_id):
     """
     Endpoint for retrieving a specified NMR spectrum from the database.
     ---
     parameters:
-      - in: query
+      - in: path
         name: internal_id
         type: integer
         description: The unique internal identifier for the spectrum that's being looked for.
@@ -1379,13 +1376,13 @@ def retrieve_nmr_spectrum(internal_id):
         return "Error: invalid internal id."
 
 
-@app.get("/get_classification_for_dtxsid/<dtxsid>")
+@app.get("/api/amos/get_classification_for_dtxsid/<dtxsid>")
 def get_classification_for_dtxsid(dtxsid):
     """
     Returns the classification of a given substance.
     ---
     parameters:
-      - in: query
+      - in: path
         name: dtxsid
         type: string
         description: DTXSID of the substance.
@@ -1400,7 +1397,7 @@ def get_classification_for_dtxsid(dtxsid):
         return Response(status=204)
 
 
-@app.post("/substances_for_classification/")
+@app.post("/api/amos/substances_for_classification/")
 def substances_for_classification():
     request_json = request.get_json()
     kingdom, superklass, klass, subklass = request_json.get("kingdom"), request_json.get(
@@ -1426,7 +1423,7 @@ def substances_for_classification():
     return jsonify({"substances": substances})
 
 
-@app.post("/next_level_classification/")
+@app.post("/api/amos/next_level_classification/")
 def next_level_classification():
     request_json = request.get_json()
     kingdom, superklass, klass = request_json.get("kingdom"), request_json.get("superklass"), request_json.get("klass")
@@ -1452,13 +1449,13 @@ def next_level_classification():
     return jsonify({"values": possible_values})
 
 
-@app.get("/fact_sheets_for_substance/<dtxsid>")
+@app.get("/api/amos/fact_sheets_for_substance/<dtxsid>")
 def fact_sheets_for_substance(dtxsid):
     """
     Returns a list of fact sheets that are associated with the given DTXSID.
     ---
     parameters:
-      - in: query
+      - in: path
         name: dtxsid
         type: string
         description: DTXSID of the substance.
@@ -1471,7 +1468,7 @@ def fact_sheets_for_substance(dtxsid):
     return jsonify({"internal_ids": fact_sheet_ids})
 
 
-@app.get("/get_data_source_info/")
+@app.get("/api/amos/get_data_source_info/")
 def data_source_info():
     """
     Returns a list of major data sources in AMOS with some supplemental information.
@@ -1484,13 +1481,13 @@ def data_source_info():
     return [c[0].get_row_contents() for c in db.session.execute(query).all()]
 
 
-@app.get("/record_id_search/<internal_id>")
+@app.get("/api/amos/record_id_search/<internal_id>")
 def record_id_search(internal_id):
     """
     Record information by ID
     ---
     parameters:
-      - in: query
+      - in: path
         name: internal_id
         type: integer
         description: The unique internal identifier for the spectrum that's being looked for.
@@ -1507,13 +1504,13 @@ def record_id_search(internal_id):
         return jsonify({"record_type": None, "data_type": None, "link": None})
 
 
-@app.get("/functional_uses_for_dtxsid/<dtxsid>")
+@app.get("/api/amos/functional_uses_for_dtxsid/<dtxsid>")
 def functional_uses_for_dtxsid(dtxsid):
     """
     Returns a list of functional uses for a substance
     ---
     parameters:
-      - in: query
+      - in: path
         name: dtxsid
         type: string
         description: DTXSID of the substance.
@@ -1532,13 +1529,13 @@ def functional_uses_for_dtxsid(dtxsid):
     return jsonify({"functional_classes": functional_use_dict.get(dtxsid, None)})
 
 
-@app.get("/dtxsids_for_functional_use/<functional_use>")
+@app.get("/api/amos/dtxsids_for_functional_use/<functional_use>")
 def dtxsids_for_functional_use(functional_use):
     """
     Returns a list of DTXSIDs for the given functional use.
     ---
     parameters:
-      - in: query
+      - in: path
         name: functional_use
         type: string
         description: Functional use to search by
@@ -1551,13 +1548,13 @@ def dtxsids_for_functional_use(functional_use):
     return jsonify({"dtxsids": dtxsid_list})
 
 
-@app.get("/formula_search/<formula>")
+@app.get("/api/amos/formula_search/<formula>")
 def formula_search(formula):
     """
     Returns a list of substances found by MF
     ---
     parameters:
-      - in: query
+      - in: path
         name: formula
         type: string
         description: Molecular furmula to search by.
@@ -1572,13 +1569,13 @@ def formula_search(formula):
     return jsonify({"substances": full_info})
 
 
-@app.get("/inchikey_first_block_search/<first_block>")
+@app.get("/api/amos/inchikey_first_block_search/<first_block>")
 def inchikey_first_block_search(first_block):
     """
     Returns a list of substances found by InChI key.
     ---
     parameters:
-      - in: query
+      - in: path
         name: first_block
         type: string
         description: First block of InChI key to search by.
@@ -1593,13 +1590,13 @@ def inchikey_first_block_search(first_block):
     return jsonify({"substances": full_info})
 
 
-@app.get("/get_ir_spectrum/<internal_id>")
+@app.get("/api/amos/get_ir_spectrum/<internal_id>")
 def get_ir_spectrum(internal_id):
     """
     Returns a list of IR spectra by ID.
     ---
     parameters:
-      - in: query
+      - in: path
         name: internal_id
         type: integer
         description: The unique internal identifier for the spectrum that's being looked for.
@@ -1619,7 +1616,7 @@ def get_ir_spectrum(internal_id):
         return "Error: invalid internal id."
 
 
-@app.post("/mass_range_search/")
+@app.post("/api/amos/mass_range_search/")
 def mass_range_search():
     request_json = request.get_json()
     lower_mass_limit = request_json["lower_mass_limit"]
@@ -1631,13 +1628,13 @@ def mass_range_search():
     return jsonify({"substances": full_info})
 
 
-@app.get("/record_type_count/<record_type>")
+@app.get("/api/amos/record_type_count/<record_type>")
 def record_type_count(record_type):
     """
     Returns the number of records of the given type.
     ---
     parameters:
-      - in: query
+      - in: path
         name: record_type
         type: string
         description: Record type to search by
@@ -1657,17 +1654,17 @@ def record_type_count(record_type):
         return Response(status=204)
 
 
-@app.get("/method_pagination/<limit>/<offset>")
+@app.get("/api/amos/method_pagination/<limit>/<offset>")
 def method_pagination(limit, offset):
     """
     Returns a paginated list of methods.
     ---
     parameters:
-      - in: query
+      - in: path
         name: limit
         type: integer
         description: Limit of records to return.
-      - in: query
+      - in: path
         name: offset
         type: integer
         description: Offset of method records to return.
@@ -1704,17 +1701,17 @@ def method_pagination(limit, offset):
     return {"results": results}
 
 
-@app.get("/fact_sheet_pagination/<limit>/<offset>")
+@app.get("/api/amos/fact_sheet_pagination/<limit>/<offset>")
 def fact_sheet_pagination(limit, offset):
     """
     Returns a paginated list of fact sheets.
     ---
     parameters:
-      - in: query
+      - in: path
         name: limit
         type: integer
         description: Limit of records to return.
-      - in: query
+      - in: path
         name: offset
         type: integer
         description: Offset of fact sheets to return.
