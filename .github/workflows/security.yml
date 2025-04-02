@@ -1,0 +1,51 @@
+name: Security Workflows
+
+on:
+  push:
+    branches: [ dev, staging ]
+    tags: [ 'v*.*.*' ]
+
+jobs:
+  container-scan:
+    runs-on: th878
+    environment: ${{ github.head_ref || github.ref_name }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Container Security Scan Action
+        uses: USEPA/ccte-container-scan@main
+        with:
+          image_name: AMOS-Server-security-cs
+          dockerfile: Dockerfile
+          output_path: ./output/dat-api-report.html
+          cleanup_path: /data/watchtower/dat/container-results/dat-api/dat-api-report.html
+          watchtower_path: /data/watchtower/dat/container-results/
+
+  trufflehog:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Run Scan
+      uses: USEPA/ccte-secret-scan@main
+      with:
+        base_branch: ${{ github.event.repository.default_branch }}
+
+  build-and-upload-sbom:
+    runs-on: th878
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate and Upload SBOM
+        uses: USEPA/ccte-sbom-generator-python@main
+        with:
+          python_version: '3.9'
+          server_hostname: 'ccte-api-dependency-track.epa.gov'
+          api_key: ${{ secrets.SECRET_OWASP_DT_KEY }}
+          project_name: 'AMOS-Server'
+          project_version: ${{ github.ref_name }}
