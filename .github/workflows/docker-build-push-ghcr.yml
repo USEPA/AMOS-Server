@@ -7,7 +7,7 @@ name: Docker-ghcr
 
 on:
   push:
-    branches: [ "dev", "staging", "main", dev-1059 ]
+    branches: [ "dev", "staging", "main" ]
 
 env:
   # Use docker.io for Docker Hub if empty
