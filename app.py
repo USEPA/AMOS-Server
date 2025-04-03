@@ -610,47 +610,38 @@ def batch_search():
     ---
     parameters:
       - in: body
-        name: base_url
-        required: true
-      - in: body
-        name: dtxsids
-        required: true
+        name: body
         schema:
-          type: array
-          items:
-            type: string
-      - in: body
-        name: include_classyfire
-        required: true
-      - in: body
-        name: include_external_links
-        required: true
-      - in: body
-        name: methodologies
-        required: true
-        schema:
-          type: array
-          items:
-            type: string
-      - in: body
-        name: record_types
-        required: true
-        schema:
-          type: array
-          items:
-            type: string
-      - in: body
-        name: additional_record_info
-        required: true
-      - in: body
-        name: include_source_counts
-        required: true
-      - in: body
-        name: include_functional_uses
-        required: true
-      - in: body
-        name: always_download_file
-        required: true
+            id: BatchSearchRequest
+            properties:
+              base_url:
+                type: string
+              dtxsids:
+                type: array
+                example: [DTXSID123]
+                description: List of DTXSIDs to search for.
+                items:
+                  type: string
+              include_classyfire:
+                type: boolean
+              include_external_links:
+                type: boolean
+              methodologies:
+                type: array
+                items:
+                  type: string
+              record_types:
+                type: array
+                items:
+                  type: string
+              additional_record_info:
+                type: boolean
+              include_source_counts:
+                type: boolean
+              include_functional_uses:
+                type: boolean
+              always_download_file:
+                type: boolean
     responses:
       200:
         description: OK
@@ -810,34 +801,28 @@ def analytical_qc_batch_search():
     ---
     parameters:
       - in: body
-        name: base_url
-        required: true
-      - in: body
-        name: dtxsids
-        required: true
+        name: body
         schema:
-          type: array
-          items:
-            type: string
-      - in: body
-        name: include_classyfire
-        required: true
-      - in: body
-        name: include_source_counts
-        required: true
-      - in: body
-        name: methodologies
-        required: true
-        schema:
-          type: array
-          items:
-            type: string
-      - in: body
-        name: include_source_counts
-        required: true
-      - in: body
-        name: include_functional_uses
-        required: true
+            id: analytical_qc_batch_search_request
+            properties:
+                base_url:
+                  type: string
+                dtxsids:
+                  type: array
+                  items:
+                    type: string
+                include_classyfire:
+                    type: boolean
+                include_source_counts:
+                    type: boolean
+                methodologies:
+                  type: array
+                  items:
+                    type: string
+                include_source_counts:
+                    type: boolean
+                include_functional_uses:
+                    type: boolean
     responses:
       200:
         description: OK
@@ -997,12 +982,15 @@ def get_spectrum_count_for_methodology():
     Currently intended for use with applications outside the Vue app.
     ---
     parameters:
-      - in: body
-        name: dtxsid
-        required: true
-      - in: body
-        name: spectrum_type
-        required: true
+        - in: body
+          name: body
+          schema:
+              id: spectrum_count_for_methodology_request
+              properties:
+                  dtxsid:
+                    type: string
+                  spectrum_type:
+                    type: string
     responses:
       200:
         description: OK
@@ -1025,12 +1013,14 @@ def get_substances_for_ids():
     ---
     parameters:
       - in: body
-        name: internal_id_list
-        required: true
+        name: body
         schema:
-          type: array
-          items:
-            type: string
+            id: substances_for_ids_request
+            properties:
+                internal_id_list:
+                    type: array
+                    items:
+                        type: string
     responses:
       200:
         description: OK
@@ -1054,12 +1044,14 @@ def count_substances_in_ids():
     ---
     parameters:
       - in: body
-        name: internal_id_list
-        required: true
+        name: body
         schema:
-          type: array
-          items:
-            type: string
+            id: count_substances_in_ids_request
+            properties:
+                internal_id_list:
+                    type: array
+                    items:
+                        type: string
     responses:
       200:
         description: OK
@@ -1077,19 +1069,18 @@ def mass_spectrum_similarity_search():
     ---
     parameters:
       - in: body
-        name: lower_mass_limit
-        required: true
-      - in: body
-        name: upper_mass_limit
-        required: true
-      - in: body
-        name: methodology
-        required: true
-      - in: body
-        name: spectrum
-        required: true
+        name: body
         schema:
-          type: object
+            id: mass_spectrum_similarity_search_request
+            properties:
+                lower_mass_limit:
+                    type: number
+                upper_mass_limit:
+                    type: number
+                methodology:
+                    type: string
+                spectrum:
+                    type: object
     responses:
       200:
         description: OK
@@ -1126,10 +1117,12 @@ def spectral_entropy():
     ---
     parameters:
       - in: body
-        name: spectrum
-        required: true
+        name: body
         schema:
-          type: object
+            id: spectral_entropy_request
+            properties:
+                spectrum:
+                    type: object
     responses:
       200:
         description: OK
@@ -1164,12 +1157,14 @@ def get_record_counts_by_dtxsid():
     ---
     parameters:
       - in: body
-        name: dtxsids
-        required: true
+        name: body
         schema:
-          type: array
-          items:
-            type: string
+            id: record_counts_by_dtxsid_request
+            properties:
+            dtxsids:
+                type: array
+                items:
+                    type: string
     responses:
       200:
         description: OK
@@ -1191,12 +1186,14 @@ def max_similarity_by_dtxsid():
     ---
     parameters:
       - in: body
-        name: dtxsids
-        required: true
+        name: body
         schema:
-          type: array
-          items:
-            type: string
+            id: max_similarity_by_dtxsid_request
+            properties:
+                dtxsids:
+                    type: array
+                    items:
+                        type: string
     responses:
       200:
         description: OK
