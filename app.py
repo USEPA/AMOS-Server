@@ -99,6 +99,8 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = "secretkey"
 
+
+
 CORS(app, resources={r'/*': {'origins': '*'}})
 
 
@@ -971,13 +973,11 @@ def method_with_spectra_search(search_type, internal_id):
 @app.post("/api/amos/spectrum_count_for_methodology/")
 def get_spectrum_count_for_methodology():
     """
-    Endpoint for getting a count of spectrum records that have the specified methodology as one of its methodologies.
-    (A few data sources can have multiple methodologies.)
+    Counts the number spectra that have the specified methodology as one of its methodologies.
 
-    Note that parameters are currently handled by a POST rather than in the URL
-    (like most of the other functions here) due to the fact that a lot of
-    methodologies have forward slashes in them (e.g., 'LC/MS'), which disrupts
-    Flask's routing.
+    Spectra from a variety of methodologies are present in the database; however, all but a few edge cases will be one of GC/MS, LC/MS, NMR, or IR.  The returned counts will also include spectra stored as PDFs, not just those stored directly in the database.
+
+    This endpoint is currently handled by a POST rather than a GET operation due to the fact that a lot of methodologies have forward slashes in them (e.g., 'LC/MS'), which disrupts routing.
 
     Currently intended for use with applications outside the Vue app.
     ---
@@ -989,8 +989,11 @@ def get_spectrum_count_for_methodology():
               properties:
                   dtxsid:
                     type: string
+                    description: DTXSID for the substance of interest.
                   spectrum_type:
                     type: string
+                    description: Analytical methodology to search for.
+                    example: GC/MS
     responses:
       200:
         description: OK
@@ -1122,7 +1125,10 @@ def spectral_entropy():
             id: spectral_entropy_request
             properties:
                 spectrum:
-                    type: object
+                    type: array
+                    description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).
+                    example: [[10.5, 20], [20, 100], [50, 1]]
+
     responses:
       200:
         description: OK
@@ -1135,6 +1141,31 @@ def spectral_entropy():
 def entropy_similarity():
     """
     Calculates the entropy similarity for two spectra.
+    ---
+    parameters:
+      - in: body
+        name: body
+        schema:
+            id: entropy_similarity_request
+            properties:
+                spectrum1:
+                    type: array
+                    description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).
+                    example: [[10.5, 20], [20, 100], [50, 1]]
+                spectrum2:
+                    type: array
+                    description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).
+                    example: [[10.5, 20], [20, 100], [50, 1]]
+                type:
+                    type: string
+                    description: Type of mass window to use.  Should be either "da" or "ppm".
+                window:
+                    type: number
+                    description: Size of the mass window to use.
+
+    responses:
+      200:
+        description: OK
     """
     post_data = request.get_json()
     print(post_data.get("type"))
@@ -1153,7 +1184,7 @@ def entropy_similarity():
 @app.post("/api/amos/record_counts_by_dtxsid/")
 def get_record_counts_by_dtxsid():
     """
-    Takes a list of DTXSIDs as the POST argument, and for each DTXSID, it returns a dictionary containing the counts of record types that are present in the database.
+    Takes a list of DTXSIDs, and for each DTXSID, it returns a dictionary containing the counts of record types that are present in the database.
     ---
     parameters:
       - in: body
@@ -1295,7 +1326,7 @@ def get_info_by_id(internal_id):
     parameters:
       - in: path
         name: internal_id
-        type: integer
+        type: string
         description: ID of the document in the database.
     responses:
       200:
@@ -1312,7 +1343,7 @@ def get_info_by_id(internal_id):
 @app.get("/api/amos/database_summary/")
 def database_summary():
     """
-    Return database summary information
+    Return database summary information.
     ---
     responses:
       200:
