@@ -499,7 +499,7 @@ def find_similar_substances(dtxsid, similarity_threshold=0.8):
 def get_similar_structures(dtxsid):
     """
     Returns a list of methods and fact sheets, each of which contain at least one substance of sufficient similarity to the searched substance.
-    
+
     Search similarity is currently hardcoded to 0.5.
     ---
     parameters:
@@ -584,7 +584,7 @@ def batch_search():
     """
     Generates an Excel workbook which lists all records in the database that contain a given set of DTXSIDs.
 
-    There are a number of options for either filtering records from the database or incorporating additional information 
+    There are a number of options for either filtering records from the database or incorporating additional information
 
     If a record contains more than one of the searched DTXSIDs, then that record will appear once for each searched substance it contains.
     ---
@@ -602,7 +602,7 @@ def batch_search():
                 example: ["DTXSID123", "DTXSID456"]
                 description: List of DTXSIDs to search for.
                 items:
-                  type: string
+                    type: string
               include_classyfire:
                 type: boolean
                 description: Flag for whether to include the top four levels of a ClassyFire classification for each of the searched substances, if it exists.
@@ -626,7 +626,7 @@ def batch_search():
                       description: Flags for including additional mass spectrum information in the results.  All metadata may not be available for all spectra.  Does not include spectra stored as PDFs.
                       schema:
                         id: BatchSearchAdditionalMassSpectrumInfo
-                        properties: 
+                        properties:
                           all:
                             type: boolean
                             description: Include all additional info for mass spectra.  Overrides other flags.
@@ -642,15 +642,15 @@ def batch_search():
                           num_peaks:
                             type: boolean
                             description: Include the number of peaks in the spectrum.
-              include_source_counts:
-                type: boolean
-                description: Flag for whether to include counts of a substance's appearances in patents, PubMed articles, and other external sources.
-              include_functional_uses:
-                type: boolean
-                description: Flag for whether to include functional use classifications based on the ChemFuncT ontology.  Only exists for around 21,000 substances in the database.
-              always_download_file:
-                type: boolean
-                description: If false, a search that does not find any matching records in the database will just return a message instead of a file.
+                    include_source_counts:
+                        type: boolean
+                        description: Flag for whether to include counts of a substance's appearances in patents, PubMed articles, and other external sources.
+                    include_functional_uses:
+                        type: boolean
+                        description: Flag for whether to include functional use classifications based on the ChemFuncT ontology.  Only exists for around 21,000 substances in the database.
+                    always_download_file:
+                        type: boolean
+                        description: If false, a search that does not find any matching records in the database will just return a message instead of a file.
     responses:
       200:
         description: An Excel file containing records and information matching the supplied DTXSIDs and filters.
@@ -1063,13 +1063,13 @@ def count_substances_in_ids():
       - in: body
         name: body
         schema:
-            id: count_substances_in_ids_request
-            properties:
-              internal_id_list:
-                type: array
-                description: Array of record IDs.
-                items:
-                  type: string
+          id: count_substances_in_ids_request
+          properties:
+            internal_id_list:
+              type: array
+              description: Array of record IDs.
+              items:
+                type: string
     responses:
       200:
         description: A JSON object with counts of substances by internal ID.
@@ -1431,6 +1431,7 @@ def mass_spectra_for_substances():
       - in: body
         name: body
         schema:
+            id: mass_spectra_for_substances_request
             properties:
               dtxsids:
                 type: array
@@ -1489,7 +1490,7 @@ def substring_search(substring):
       - in: path
         name: substring
         type: string
-        description: A name substring to search by.  
+        description: A name substring to search by.
     responses:
       200:
         description: A JSON object of substances with DTXSIDs as keys, and substance information -- including names, matching synonyms, (if any), and additional information -- as the values.
@@ -1686,7 +1687,7 @@ def substances_for_classification():
       - in: body
         name: body
         schema:
-            id: ClassyFireClassification
+            id: ClassyFireClassificationRequest
             properties:
               kingdom:
                 type: string
@@ -1735,7 +1736,7 @@ def next_level_classification():
     Can search for
     - All superclasses for a given kingdom
     - All classes for a given kingdom and superclass
-    - All subclasses for a given kingdom, superclass, and class 
+    - All subclasses for a given kingdom, superclass, and class
 
     Note that "class" is spelled with a "k" in the arguments to avoid possible issues with using a common programming keyword.
     ---
@@ -1743,7 +1744,7 @@ def next_level_classification():
       - in: body
         name: body
         schema:
-            id: ClassyFireClassification
+            id: ClassyFireClassificationRequest
             properties:
               kingdom:
                 type: string
@@ -1954,7 +1955,7 @@ def mass_range_search():
       - in: body
         name: body
         schema:
-            id: MassRangeSubstanceSearch
+            id: MassRangeSubstanceSearchRequest
             properties:
               lower_mass_limit:
                 type: number
