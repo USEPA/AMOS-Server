@@ -599,13 +599,14 @@ def batch_search():
                 description: URL for the AMOS frontend.  Used to construct the internal links in the output file.
               dtxsids:
                 type: array
-                example: ["DTXSID123", "DTXSID456"]
+                example: ["DTXSID9020112", "DTXSID3022401"]
                 description: List of DTXSIDs to search for.
                 items:
                     type: string
               include_classyfire:
                 type: boolean
                 description: Flag for whether to include the top four levels of a ClassyFire classification for each of the searched substances, if it exists.
+                example: true
               include_external_links:
                 type: boolean
                 description: Flag for whether to include database records that are purely external links (e.g., spectra that we can link to but cannot store directly in the database).
@@ -820,7 +821,7 @@ def analytical_qc_batch_search():
                 description: URL for the AMOS frontend.  Used to construct the internal links in the output file.
               dtxsids:
                 type: array
-                example: ["DTXSID123", "DTXSID456"]
+                example: ["DTXSID9020112", "DTXSID3022401"]
                 description: List of DTXSIDs to search for.
                 items:
                   type: string
@@ -1003,10 +1004,11 @@ def get_spectrum_count_for_methodology():
                   dtxsid:
                     type: string
                     description: DTXSID for the substance of interest.
+                    example: "DTXSID9020112"
                   spectrum_type:
                     type: string
                     description: Analytical methodology to search for.
-                    example: GC/MS
+                    example: "GC/MS"
     responses:
       200:
         description: A count of spectra in the database for the given substance and analytical methodology.
@@ -1036,6 +1038,7 @@ def get_substances_for_ids():
               internal_id_list:
                 type: array
                 description: Array of record IDs.
+                example: ["GJ-004", "FS-26369", "1CGr7ZTsFv4"]
                 items:
                   type: string
     responses:
@@ -1057,7 +1060,7 @@ def get_substances_for_ids():
 @app.post("/api/amos/count_substances_in_ids/")
 def count_substances_in_ids():
     """
-    Counts the number of unique substances seen in each of a given set of internal IDs.
+    Counts the number of unique substances seen in a set of records.
     ---
     parameters:
       - in: body
@@ -1068,11 +1071,12 @@ def count_substances_in_ids():
             internal_id_list:
               type: array
               description: Array of record IDs.
+              example: ["GJ-004", "FS-26369", "1CGr7ZTsFv4"]
               items:
                 type: string
     responses:
       200:
-        description: A JSON object with counts of substances by internal ID.
+        description: A JSON object with the count of unique substances between all submitted records.
     """
     internal_id_list = request.get_json()["internal_id_list"]
     q = db.select(func.count(Contents.dtxsid.distinct())).filter(Contents.internal_id.in_(internal_id_list))
@@ -1094,16 +1098,27 @@ def mass_spectrum_similarity_search():
               lower_mass_limit:
                 type: number
                 description: Lower limit of the mass range to search for.
+                example: 194.1
               upper_mass_limit:
                 type: number
                 description: Upper limit of the mass range to search for.
+                example: 194.2
               methodology:
                 type: string
                 description: Analytical methodology to search for.  Values aside from "GC/MS" and "LC/MS" are highly unlikely to produce results.
+                example: "LC/MS"
               spectrum:
                 type: array
                 description: Array of two-element numeric arrays.  The two-element arrays represent a single peak in the spectrum, in the format [m/z, intensity].  Peaks should be sorted in ascending order of m/z values.
-                example: [[12, 34], [19, 100], [34, 30]]
+                example: [[217.0696, 100.0],[218.0721,10.229229]]
+              type:
+                type: string
+                description: Type of mass window to use for entropy similarity calculations.  Can be either "da" or "ppm".
+                example: "da"
+              window:
+                type: number
+                description: Size of mass window.  Is in units of `type`.
+                example: 0.05
     responses:
       200:
         description: A JSON object containing a list of database spectra and a deduplicated list of substances that those spectra correspond to.
@@ -1175,13 +1190,15 @@ def entropy_similarity():
                 spectrum_2:
                     type: array
                     description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).  Peaks should be sorted in increasing order of m/z values.
-                    example: [[10.5, 20], [20, 100], [50, 1]]
+                    example: [[10.5, 20], [22, 100], [50, 1.5]]
                 type:
                     type: string
                     description: Type of mass window to use.  Should be either "da" or "ppm".
+                    example: "da"
                 window:
                     type: number
                     description: Size of the mass window to use.  Will be in units of the 'type' argument.
+                    example: 0.1
 
     responses:
       200:
@@ -1212,13 +1229,13 @@ def get_record_counts_by_dtxsid():
             properties:
               dtxsids:
                 type: array
-                example: ["DTXSID123", "DTXSID456"]
                 description: List of DTXSIDs to search for.
+                example: ["DTXSID9020112", "DTXSID3022401"]
                 items:
                   type: string
     responses:
       200:
-        description: A JSON object of record counts per DTXSID.
+        description: A JSON object of record counts per DTXSID, broken down by record type.
     """
     dtxsid_list = request.get_json()["dtxsids"]
     record_count_dict = cq.record_counts_by_dtxsid(dtxsid_list)
@@ -1240,23 +1257,26 @@ def max_similarity_by_dtxsid():
             properties:
               dtxsids:
                 type: array
-                example: ["DTXSID123", "DTXSID456"]
+                example: ["DTXSID0020232", "DTXSID70199859"]
                 description: List of DTXSIDs to search for.
                 items:
                   type: string
               spectra:
                 type: array
                 description: A list of spectra, where each spectrum is an array of m/z-intensity pairs formatted as two-element arrays.
-                example: [[[10, 20], [23, 100]], [[15,30], [24.5, 100], [33, 9]]]
+                example: [[[217.0696, 100.0], [218.0721, 10.229229]]]
               da_window:
                 type: number
                 description: Mass window in units of daltons.  If not null, this will be used for similarity calculations, regardless of whether ppm_window is supplied.
+                example: 0.1
               ppm_window:
                 type: number
                 description: Mass window in units of parts per million.  Will only be used if da_window is null or not passed and ppm_window is not null.
+                example: 5
               ms_level:
                 type: integer
                 description: Level of mass spectrometry; if supplied, then only spectra at the specified level will be returned.  Valid values are from 1 to 5.
+                example: 2
     responses:
       200:
         description: A JSON object with DTXSIDs as keys and an array of highest found entropy similarity scores as the values.  The order of values in the array corresponds to their order in the list of user-submitted spectra.  If no spectra were found for a given DTXSID, the DTXSID will map to None.
@@ -1280,7 +1300,6 @@ def max_similarity_by_dtxsid():
 
     # get the list of spectra in the database for the given substances
     results = cq.mass_spectra_for_substances(dtxsids, ms_level=ms_level)
-
     substance_dict = {d: [None] * len(user_spectra) for d in dtxsids}
     for i, us in enumerate(user_spectra):
         for r in results:
@@ -1302,12 +1321,12 @@ def all_similarities_by_dtxsid():
       - in: body
         name: body
         schema:
-            id: max_similarity_by_dtxsid_request
+            id: all_similarity_by_dtxsid_request
             properties:
               dtxsids:
                 type: array
-                example: ["DTXSID123", "DTXSID456"]
                 description: List of DTXSIDs to search for.
+                example: ["DTXSID9020112", "DTXSID3022401"]
                 items:
                   type: string
               spectra:
@@ -1317,15 +1336,19 @@ def all_similarities_by_dtxsid():
               da_window:
                 type: number
                 description: Mass window in units of daltons.  If not null, this will be used for similarity calculations, regardless of whether ppm_window is supplied.
+                example: 0.1
               ppm_window:
                 type: number
                 description: Mass window in units of parts per million.  Will only be used if da_window is null or not passed and ppm_window is not null.
+                example: 5
               ms_level:
                 type: integer
                 description: Level of mass spectrometry; if supplied, then only spectra at the specified level will be returned.  Valid values are from 1 to 5.
+                example: 2
               min_intensity:
                 type: number
                 description: Minimum intensity level for peaks in both the user and database spectra to consider.  All database spectra are scaled to have a maximum intensity of 100, and all user spectra are assumed to be scaled the same.
+                example: 0
     responses:
       200:
         description: An array of JSON objects, where each element in the array corresponds to a user spectrum.  Each JSON objects has DTXSIDs as keys and a list of dictionaries containing similarity information and spectrum metadata, with one entry per database spectrum, as the values.
@@ -1425,7 +1448,11 @@ def database_summary():
 @app.post("/api/amos/mass_spectra_for_substances/")
 def mass_spectra_for_substances():
     """
-    Given a list of DTXSIDs, return all spectra for those substances.
+    Given a list of DTXSIDs, return all mass spectra for those substances.
+
+    This endpoint will not return mass spectra stored as PDFs or ones that are only externally linked.
+
+    IMPORTANT -- Some substances can potentially have a multiple hundreds of spectra associated with them.  Submitting large numbers of substances in an individual transaction is not advised due to potential lag.
     ---
     parameters:
       - in: body
@@ -1435,13 +1462,13 @@ def mass_spectra_for_substances():
             properties:
               dtxsids:
                 type: array
-                example: ["DTXSID123", "DTXSID456"]
+                example: ["DTXSID9020112"]
                 description: List of DTXSIDs to search for.
                 items:
                   type: string
     responses:
       200:
-        description: A JSON object containing a list of spectra and a mapping of DTXSIDs to names for any substances found.
+        description: A JSON object containing a list of mass spectra and a mapping of DTXSIDs to names for any substances found.
     """
     dtxsids = request.get_json()["dtxsids"]
     spectrum_results = cq.mass_spectra_for_substances(dtxsids)
@@ -1636,7 +1663,7 @@ def retrieve_nmr_spectrum(internal_id):
       - in: path
         name: internal_id
         type: string
-        description: Unique ID of the NMR spectrrum of interest.
+        description: Unique ID of the NMR spectrum of interest.
     responses:
       200:
         description: A JSON object containing the spectrum and metadata about it.
@@ -1692,15 +1719,19 @@ def substances_for_classification():
               kingdom:
                 type: string
                 description: Kingdom-level (highest) classification of a substance.
+                example: "Organic compounds"
               superklass:
                 type: string
                 description: Superclass-level (second-highest) classification of a substance.
+                example: "Organic salts"
               klass:
                 type: string
                 description: Class-level (third-highest) classification of a substance.
+                example: "Organic metal salts"
               subklass:
                 type: string
                 description: Subclass-level (fourth-highest) classification of a substance.
+                example: "Organic calcium salts"
     responses:
       200:
         description: A list of matching substances with supporting information.
@@ -1744,17 +1775,20 @@ def next_level_classification():
       - in: body
         name: body
         schema:
-            id: ClassyFireClassificationRequest
+            id: ClassyFireLevelRequest
             properties:
               kingdom:
                 type: string
                 description: Kingdom-level (highest) classification of a substance.  Always required.
+                example: "Organic compounds"
               superklass:
                 type: string
                 description: Superclass-level (second-highest) classification of a substance.  Required if requesting a list of classes or subclasses.
+                example: "Organic salts"
               klass:
                 type: string
                 description: Class-level (third-highest) classification of a substance.  Required if requesting a list of subclasses.
+                example: "Organic metal salts"
     responses:
       200:
         description: A list of superclasses, classes, or subclasses, as appropriate.
@@ -1960,9 +1994,11 @@ def mass_range_search():
               lower_mass_limit:
                 type: number
                 description: Lower limit of the mass range to search for.
+                example: 194.1
               upper_mass_limit:
                 type: number
                 description: Upper limit of the mass range to search for.
+                example: 194.2
     responses:
       200:
         description: A list of substances and additional information about them.
