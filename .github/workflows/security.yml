@@ -1,9 +1,8 @@
 name: Security Workflows
 
-
 on:
   push:
-    branches: [ dev, staging, dev-1059 ]
+    branches: [ dev, staging ]
     tags: [ 'v*.*.*' ]
 
 jobs:
