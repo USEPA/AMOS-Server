@@ -642,15 +642,15 @@ def batch_search():
                           num_peaks:
                             type: boolean
                             description: Include the number of peaks in the spectrum.
-                    include_source_counts:
-                        type: boolean
-                        description: Flag for whether to include counts of a substance's appearances in patents, PubMed articles, and other external sources.
-                    include_functional_uses:
-                        type: boolean
-                        description: Flag for whether to include functional use classifications based on the ChemFuncT ontology.  Only exists for around 21,000 substances in the database.
-                    always_download_file:
-                        type: boolean
-                        description: If false, a search that does not find any matching records in the database will just return a message instead of a file.
+              include_source_counts:
+                type: boolean
+                description: Flag for whether to include counts of a substance's appearances in patents, PubMed articles, and other external sources.
+              include_functional_uses:
+                type: boolean
+                description: Flag for whether to include functional use classifications based on the ChemFuncT ontology.  Only exists for around 21,000 substances in the database.
+              always_download_file:
+                type: boolean
+                description: If false, a search that does not find any matching records in the database will just return a message instead of a file.
     responses:
       200:
         description: An Excel file containing records and information matching the supplied DTXSIDs and filters.
@@ -1168,11 +1168,11 @@ def entropy_similarity():
         schema:
             id: entropy_similarity_request
             properties:
-                spectrum1:
+                spectrum_1:
                     type: array
                     description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).  Peaks should be sorted in increasing order of m/z values.
                     example: [[10.5, 20], [20, 100], [50, 1]]
-                spectrum2:
+                spectrum_2:
                     type: array
                     description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).  Peaks should be sorted in increasing order of m/z values.
                     example: [[10.5, 20], [20, 100], [50, 1]]
