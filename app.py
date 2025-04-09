@@ -100,7 +100,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = "secretkey"
 
 
-
 CORS(app, resources={r'/*': {'origins': '*'}})
 
 
@@ -141,24 +140,22 @@ def determine_search_type(search_term):
 @app.get("/api/amos/get_substances_for_search_term/<search_term>")
 def get_substances_for_search_term(search_term):
     """
-    Returns substances by a search term.
+    Returns substance(s) that match a search term.
 
-    Takes a string containing a search term, and tries to find any DTXSIDs that
-    match it, returning them along with information about the substances.
+    Takes a string that is interpreted as either an InChIKey, CASRN, DTXSID, or substance name and returns a list of any substances that match the search term.
 
-    If no DTXSID is found, the function returns None.  If multiple synonyms or
-    the first blocks of multiple InChIKeys are matched, the ambiguity variable
-    will be passed indicating the issue, along with a list of the substances
-    and information about them.
+    If no DTXSID is found, the function returns None.  If multiple synonyms or the first block InChIKey matches are found, the response will have an 'ambiguity' variable will be passed indicating the issue.
 
+    If an InChIKey is searched for, the results will consist of all InChIKeys that match the first block of the InChIKey.
     ---
     parameters:
       - in: path
         name: search_term
         type: string
+        description: A substance identifier.  If it cannot be parsed as an InChIKey, CASRN, or DTXSID, it is assumed to be a name.
     responses:
       200:
-        description: Operation successful
+        description: A JSON object containing a list of substances and a variable that indicates whether there is any ambiguity in the search term.
     """
     search_type = determine_search_type(search_term)
     substances = None  # default value
@@ -189,9 +186,6 @@ def get_substances_for_search_term(search_term):
 
     elif search_type == SearchType.InChIKey:
         results = cq.inchikey_first_block_search(search_term[:14])
-        """ inchikey_first_block = search_term[:14]
-        q = q.filter(Substances.jchem_inchikey.like(inchikey_first_block+"%") | Substances.indigo_inchikey.like(inchikey_first_block+"%"))
-        results = [r[0].get_row_contents() for r in db.session.execute(q).all()] """
         inchikey_present = any([r["jchem_inchikey"] == search_term for r in results]) or any(
             [r["indigo_inchikey"] == search_term for r in results])
         if inchikey_present and len(results) == 1:
@@ -215,17 +209,16 @@ def get_substances_for_search_term(search_term):
 @app.get("/api/amos/search/<dtxsid>")
 def search_results(dtxsid):
     """
-    Endpoint for retrieving search results of a specified DTXSID.
-
-    Parameters
+    Retrieves a list of records from the database that contain a searched DTXSID.
     ---
     parameters:
       - in: path
-        name: stxsid
+        name: dtxsid
         type: string
+        description: The DTXSID for the substance of interest.
     responses:
       200:
-        description: A JSON structure containing a list of records from the database.
+        description: A JSON object containing a list of records from the database and counts of records by record type.
     """
 
     id_query = db.select(Contents.internal_id).filter(Contents.dtxsid == dtxsid)
@@ -285,17 +278,18 @@ def search_results(dtxsid):
 @app.get("/api/amos/get_mass_spectrum/<internal_id>")
 def retrieve_mass_spectrum(internal_id):
     """
-    Endpoint for retrieving a specified mass spectrum from the database.
+    Retrieves a mass spectrum by its ID in AMOS's database with supporting information.
 
+    This will only search for mass spectra stored directly in the database, and not spectra stored as PDFs.
     ---
     parameters:
       - in: path
         name: internal_id
-        type: integer
-        description: The unique internal identifier for the spectrum that's being looked for.
+        type: string
+        description: Unique ID of the mass spectrum of interest.
     responses:
       200:
-        description: A JSON structure containing the information about the spectrum.
+        description: A JSON object containing the spectrum, entropy calculations, and other information.
     """
     q = db.select(
         MassSpectra.spectrum, MassSpectra.splash, MassSpectra.normalized_entropy, MassSpectra.spectral_entropy,
@@ -319,22 +313,16 @@ def retrieve_mass_spectrum(internal_id):
 @app.get("/api/amos/fact_sheet_list")
 def fact_sheet_list():
     """
-    Endpoint for retrieving a list of all the fact sheets present in the database.
-
-    The current Vue page using this is only displaying the year th
-    record was published, hence why the 'year_published' field is being
-    generated.
-
+    Retrieves a list of fact sheets in the database with their supplemental information.
     ---
     responses:
       200:
-        description: A list of dictionaries, each one corresponding to one fact sheet in the
+        description: A list of JSON objects, each one containing information on one fact sheet in the database.
     """
 
     q = db.select(
         FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.analyte, FactSheets.document_type,
-        FactSheets.functional_classes,
-        RecordInfo.source, RecordInfo.link, func.count(Contents.dtxsid)
+        FactSheets.functional_classes, RecordInfo.source, RecordInfo.link, func.count(Contents.dtxsid)
     ).join_from(
         FactSheets, RecordInfo, FactSheets.internal_id == RecordInfo.internal_id
     ).join_from(
@@ -358,12 +346,11 @@ def fact_sheet_list():
 @app.get("/api/amos/method_list")
 def method_list():
     """
-    Endpoint for retrieving a list of all the methods present in the database.
-
+    Retrieves a list of methods in the database with their supplemental information.
     ---
     responses:
       200:
-        description: A list of dictionaries, each one corresponding to one method in the database.
+        description: A list of JSON objects, each one containing information on one method in the database.
     """
 
     q = db.select(
@@ -398,8 +385,7 @@ def method_list():
 @app.get("/api/amos/get_pdf/<record_type>/<internal_id>")
 def get_pdf(record_type, internal_id):
     """
-    Retrieve a PDF from the database by the internal ID and type of record.
-
+    Retrieves a PDF from the database by the internal ID and type of record.
     ---
     parameters:
       - in: path
@@ -408,8 +394,8 @@ def get_pdf(record_type, internal_id):
         description: A string indicating which kind of record is being retrieved.  Valid values are 'fact sheet', 'method', and 'spectrum pdf'.
       - in: path
         name: internal_id
-        type: integer
-        description: ID of the document in the database.
+        type: string
+        description: Unique ID of the document of interest.
     responses:
       200:
         description: The PDF being searched, in the form of an <iframe>-compatible element.
@@ -429,25 +415,23 @@ def get_pdf(record_type, internal_id):
 @app.get("/api/amos/get_pdf_metadata/<record_type>/<internal_id>")
 def get_pdf_metadata(record_type, internal_id):
     """
-    Retrieves metadata associated with a PDF.
+    Retrieves metadata associated with a PDF record.
 
-    Both fact sheets and methods have
-    associated metadata, so this uses the record_type argument to differentiate
+    Fact sheets, methods, and spectrum PDFs all have associated metadata, so this uses the record_type argument to differentiate
     between them.
-
     ---
     parameters:
       - in: path
         name: record_type
         type: string
-        description: A string indicating which kind of record is being retrieved. Valid values are 'fact sheet' and 'method'.
+        description: A string indicating which kind of record is being retrieved. Valid values are 'spectrum, 'fact sheet', and 'method'.
       - in: path
         name: internal_id
-        type: integer
-        description: ID of the document in the database.
+        type: string
+        description: Unique ID of the PDF of interest.
     responses:
       200:
-        description: A JSON structure containing the metadata, the name, and whether the method has associated spectra.
+        description: A JSON structure containing the name of the document, its associated metadata, and whether the document has associated spectra (always false for non-methods).
     """
 
     metadata = cq.pdf_metadata(internal_id, record_type.lower())
@@ -460,19 +444,17 @@ def get_pdf_metadata(record_type, internal_id):
 @app.get("/api/amos/find_dtxsids/<internal_id>")
 def find_dtxsids(internal_id):
     """
-    Returns a list of DTXSIDs associated with the specified internal ID
-    Along with additional substance information. This is mostly used for pulling back
-    information on the substances listed in a method or fact sheet.
+    Returns a list of DTXSIDs associated with the specified internal ID, along with additional substance information.
 
     ---
     parameters:
       - in: path
         name: internal_id
-        type: integer
-        description: ID of the document in the database.
+        type: string
+        description: Unique ID of the record of interest.
     responses:
       200:
-        description: A JSON structure containing a list of substance information.  This will be empty if no records were found.
+        description: A JSON structure containing a list of substance information.
     """
 
     substance_list = cq.substances_for_ids(internal_id)
@@ -484,20 +466,15 @@ def find_dtxsids(internal_id):
 @app.get("/api/amos/substance_similarity_search/<dtxsid>")
 def find_similar_substances(dtxsid, similarity_threshold=0.8):
     """
-    Makes a call to an EPA-built API for substance similarity
-     And returns the list of DTXSIDs of substances with a similarity measure at or above the
-    `similarity_threshold` parameter.
+    Returns a list of similar substances to a given DTXSID.
 
+    This endpoint hits an endpoint on another API for retrieving similarity information.  This endpoint is primarily called by the get_similar_structures() endpoint, and has its similarity threshold hardcoded at 0.8.
     ---
     parameters:
       - in: path
         name: dtxsid
         type: string
-        description: The DTXSID to search on.
-      - in: path
-        name: similarity_threshold
-        type: float
-        description: A value from 0 to 1, sent to an EPA API as a threshold for how similar the substances you're searching for should be.  Higher values will return only highly similar substances.
+        description: The DTXSID for the substance of interest.
     responses:
       200:
         description: A list of similar substances, or None if none were found.
@@ -521,18 +498,18 @@ def find_similar_substances(dtxsid, similarity_threshold=0.8):
 @app.get("/api/amos/get_similar_structures/<dtxsid>")
 def get_similar_structures(dtxsid):
     """
-    Searches the database for all methods which contain at least one substance of sufficient similarity to the searched substance.
-    The searched similarity level is hardcoded here, and I currently have no plans to make it adjustable by the app.
-
+    Returns a list of methods and fact sheets, each of which contain at least one substance of sufficient similarity to the searched substance.
+    
+    Search similarity is currently hardcoded to 0.5.
     ---
     parameters:
       - in: path
         name: dtxsid
         type: string
-        description: The DTXSID to search on.
+        description: The DTXSID for the substance of interest.
     responses:
       200:
-        description: A JSON structure containing information on the related methods.
+        description: A JSON object containing lists of the related methods, the related fact sheets, and the similar substances..
     """
     similar_substance_info = find_similar_substances(dtxsid, similarity_threshold=0.5)["similar_substance_info"]
     if similar_substance_info is None:
@@ -605,48 +582,78 @@ def get_similar_structures(dtxsid):
 @app.post("/api/amos/batch_search")
 def batch_search():
     """
-    Receives a list of DTXSIDs and returns information on all records in the
-    database that contain those DTXSIDs.  If a record contains more than one of
-    the searched DTXSIDs, then that record will appear once for each searched
-    substance it contains.
+    Generates an Excel workbook which lists all records in the database that contain a given set of DTXSIDs.
+
+    There are a number of options for either filtering records from the database or incorporating additional information 
+
+    If a record contains more than one of the searched DTXSIDs, then that record will appear once for each searched substance it contains.
     ---
     parameters:
       - in: body
         name: body
         schema:
-            id: BatchSearchRequest
+            id: BatchSearchGeneralRequest
             properties:
               base_url:
                 type: string
+                description: URL for the AMOS frontend.  Used to construct the internal links in the output file.
               dtxsids:
                 type: array
-                example: [DTXSID123]
+                example: ["DTXSID123", "DTXSID456"]
                 description: List of DTXSIDs to search for.
                 items:
                   type: string
               include_classyfire:
                 type: boolean
+                description: Flag for whether to include the top four levels of a ClassyFire classification for each of the searched substances, if it exists.
               include_external_links:
                 type: boolean
+                description: Flag for whether to include database records that are purely external links (e.g., spectra that we can link to but cannot store directly in the database).
               methodologies:
-                type: array
-                items:
-                  type: string
+                type: object
+                description: Filters the returned results by analytical methodologies.  This argument should be a dictionary with four keys with boolean values -- "all", "GC/MS", "LC/MS", and "NMR".  There are some methodologies with small numbers of records (e.g., IR spectra) which will only appear in the data if "all" is set to true.
+                example: {"all": false, "GC/MS": true, "LC/MS": true, "NMR": false}
               record_types:
-                type: array
-                items:
-                  type: string
+                type: object
+                description: Filters returned results by record type.  This argument should be a dictionary with three keys with boolean values -- "Fact Sheet", "Method", and "Spectrum".  Note that the "Spectrum" flag will return spectra of all types -- mass, NMR, etc.
+                example: {"Fact Sheet": false, "Method": true, "Spectrum": true}
               additional_record_info:
-                type: boolean
+                description: Dictionary of flags for including an assortment of supplemental information, generally on a per-data-type basis.
+                schema:
+                  id: BatchSearchAdditionalRecordInfo
+                  properties:
+                    ms:
+                      description: Flags for including additional mass spectrum information in the results.  All metadata may not be available for all spectra.  Does not include spectra stored as PDFs.
+                      schema:
+                        id: BatchSearchAdditionalMassSpectrumInfo
+                        properties: 
+                          all:
+                            type: boolean
+                            description: Include all additional info for mass spectra.  Overrides other flags.
+                          ionization_mode:
+                            type: boolean
+                            description: Include whether the spectrum was collected in a positive or negative mode experiment.  Not always available.
+                          rating:
+                            type: boolean
+                            description: Include a clean/noisy rating for the spectrum, based on the spectral and normalized entropy scores.
+                          spectral_entropy:
+                            type: boolean
+                            description: Include the spectral entropy score for a given spectrum.  Will be missing for spectra with only one peak.
+                          num_peaks:
+                            type: boolean
+                            description: Include the number of peaks in the spectrum.
               include_source_counts:
                 type: boolean
+                description: Flag for whether to include counts of a substance's appearances in patents, PubMed articles, and other external sources.
               include_functional_uses:
                 type: boolean
+                description: Flag for whether to include functional use classifications based on the ChemFuncT ontology.  Only exists for around 21,000 substances in the database.
               always_download_file:
                 type: boolean
+                description: If false, a search that does not find any matching records in the database will just return a message instead of a file.
     responses:
       200:
-        description: OK
+        description: An Excel file containing records and information matching the supplied DTXSIDs and filters.
     """
     parameters = request.get_json()
     base_url = parameters["base_url"]
@@ -798,8 +805,9 @@ def batch_search():
 @app.post("/api/amos/analytical_qc_batch_search")
 def analytical_qc_batch_search():
     """
-    Receives a list of DTXSIDs
-    And returns information on all Analytical QC records that contain those DTXSIDs.
+    Generates an Excel workbook containing information on all Analytical QC records that contain a given list of DTXSIDs.
+
+    Due to the amount of special handling that the Analytical QC data requires, this separate endpoint was set up.  Analytical QC data can be found in the general batch search, but will lack some domain-specific information that this search supplies.
     ---
     parameters:
       - in: body
@@ -807,27 +815,34 @@ def analytical_qc_batch_search():
         schema:
             id: analytical_qc_batch_search_request
             properties:
-                base_url:
+              base_url:
+                type: string
+                description: URL for the AMOS frontend.  Used to construct the internal links in the output file.
+              dtxsids:
+                type: array
+                example: ["DTXSID123", "DTXSID456"]
+                description: List of DTXSIDs to search for.
+                items:
                   type: string
-                dtxsids:
-                  type: array
-                  items:
-                    type: string
-                include_classyfire:
-                    type: boolean
-                include_source_counts:
-                    type: boolean
-                methodologies:
-                  type: array
-                  items:
-                    type: string
-                include_source_counts:
-                    type: boolean
-                include_functional_uses:
-                    type: boolean
+              include_classyfire:
+                type: boolean
+                description: Flag for whether to include the top four levels of a ClassyFire classification for each of the searched substances, if it exists.
+              include_source_counts:
+                type: boolean
+                description: Flag for whether to include counts of a substance's appearances in patents, PubMed articles, and other external sources.
+              methodologies:
+                type: object
+                description: Filters the returned results by analytical methodologies.  This argument should be a dictionary with four keys with boolean values -- "all", "GC/MS", "LC/MS", and "NMR".  There are some methodologies with small numbers of records (e.g., IR spectra) which will only appear in the data if "all" is set to true.
+                example: {"all": false, "GC/MS": true, "LC/MS": true, "NMR": false}
+              include_source_counts:
+                type: boolean
+                description: Flag for whether to include counts of a substance's appearances in patents, PubMed articles, and other external sources.
+              include_functional_uses:
+                type: boolean
+                description: Flag for whether to include functional use classifications based on the ChemFuncT ontology.  Only exists for around 21,000 substances in the database.
     responses:
       200:
-        description: OK
+        description: An Excel file containing records and information for Analytical QC records matching the supplied DTXSIDs and filters.
     """
     parameters = request.get_json()
     dtxsid_list = parameters["dtxsids"]
@@ -927,22 +942,20 @@ def analytical_qc_batch_search():
 @app.get("/api/amos/method_with_spectra/<search_type>/<internal_id>")
 def method_with_spectra_search(search_type, internal_id):
     """
-    Attempts to return information about a method with linked spectra.
-    Searching is done using the internal ID of either the method or one of its spectra.
-
+    Returns information about a method with linked spectra, given an ID for either a spectrum or a method.
     ---
     parameters:
       - in: path
         name: search_type
         type: string
-        description: Search type
+        description: How to search the database.  Valid values are "spectrum" and "method".
       - in: path
         name: internal_id
-        type: integer
-        description: The unique internal identifier for the spectrum that's being looked for.
+        type: string
+        description: Unique ID of the spectrum or method of interest.
     responses:
       200:
-        description: A JSON structure containing the information about the spectrum.
+        description: A JSON object containing information about the method and its associated spectra.
     """
     if search_type == "spectrum":
         q = db.select(MethodsWithSpectra.method_id).filter(MethodsWithSpectra.spectrum_id == internal_id)
@@ -973,7 +986,7 @@ def method_with_spectra_search(search_type, internal_id):
 @app.post("/api/amos/spectrum_count_for_methodology/")
 def get_spectrum_count_for_methodology():
     """
-    Counts the number spectra that have the specified methodology as one of its methodologies.
+    Returns the number of spectra that have a specified methodology.
 
     Spectra from a variety of methodologies are present in the database; however, all but a few edge cases will be one of GC/MS, LC/MS, NMR, or IR.  The returned counts will also include spectra stored as PDFs, not just those stored directly in the database.
 
@@ -996,7 +1009,7 @@ def get_spectrum_count_for_methodology():
                     example: GC/MS
     responses:
       200:
-        description: OK
+        description: A count of spectra in the database for the given substance and analytical methodology.
     """
 
     dtxsid = request.get_json()["dtxsid"]
@@ -1012,7 +1025,7 @@ def get_spectrum_count_for_methodology():
 @app.post("/api/amos/substances_for_ids/")
 def get_substances_for_ids():
     """
-    Accepts a list of internal_ids (via POST) and returns a deduplicated list substances that appear in those records.
+    Returns an Excel file containing a deduplicated list of substances that appear in a given set of database record IDs.
     ---
     parameters:
       - in: body
@@ -1020,13 +1033,14 @@ def get_substances_for_ids():
         schema:
             id: substances_for_ids_request
             properties:
-                internal_id_list:
-                    type: array
-                    items:
-                        type: string
+              internal_id_list:
+                type: array
+                description: Array of record IDs.
+                items:
+                  type: string
     responses:
       200:
-        description: OK
+        description: An Excel file containing a list of substances.
     """
 
     internal_id_list = request.get_json()["internal_id_list"]
@@ -1043,7 +1057,7 @@ def get_substances_for_ids():
 @app.post("/api/amos/count_substances_in_ids/")
 def count_substances_in_ids():
     """
-    Counts the number of unique substances seen in a given set of internal IDs.
+    Counts the number of unique substances seen in each of a given set of internal IDs.
     ---
     parameters:
       - in: body
@@ -1051,13 +1065,14 @@ def count_substances_in_ids():
         schema:
             id: count_substances_in_ids_request
             properties:
-                internal_id_list:
-                    type: array
-                    items:
-                        type: string
+              internal_id_list:
+                type: array
+                description: Array of record IDs.
+                items:
+                  type: string
     responses:
       200:
-        description: OK
+        description: A JSON object with counts of substances by internal ID.
     """
     internal_id_list = request.get_json()["internal_id_list"]
     q = db.select(func.count(Contents.dtxsid.distinct())).filter(Contents.internal_id.in_(internal_id_list))
@@ -1076,17 +1091,22 @@ def mass_spectrum_similarity_search():
         schema:
             id: mass_spectrum_similarity_search_request
             properties:
-                lower_mass_limit:
-                    type: number
-                upper_mass_limit:
-                    type: number
-                methodology:
-                    type: string
-                spectrum:
-                    type: object
+              lower_mass_limit:
+                type: number
+                description: Lower limit of the mass range to search for.
+              upper_mass_limit:
+                type: number
+                description: Upper limit of the mass range to search for.
+              methodology:
+                type: string
+                description: Analytical methodology to search for.  Values aside from "GC/MS" and "LC/MS" are highly unlikely to produce results.
+              spectrum:
+                type: array
+                description: Array of two-element numeric arrays.  The two-element arrays represent a single peak in the spectrum, in the format [m/z, intensity].  Peaks should be sorted in ascending order of m/z values.
+                example: [[12, 34], [19, 100], [34, 30]]
     responses:
       200:
-        description: OK
+        description: A JSON object containing a list of database spectra and a deduplicated list of substances that those spectra correspond to.
     """
     request_json = request.get_json()
     lower_mass_limit = request_json["lower_mass_limit"]
@@ -1107,8 +1127,8 @@ def mass_spectrum_similarity_search():
         if r["similarity"] >= 0.1:
             substance_mapping[r["dtxsid"]] = r["preferred_name"]
         del r["preferred_name"]
-    results = [r for r in results if
-               r["similarity"] >= 0.1]  # since the frontend will only ever show stuff with a similarity of at least 0.1
+    # since the frontend will only ever show stuff with a similarity of at least 0.1, filter the list
+    results = [r for r in results if r["similarity"] >= 0.1]
     return jsonify({"result_length": len(results), "unique_substances": len(substance_mapping), "results": results,
                     "substance_mapping": substance_mapping})
 
@@ -1126,12 +1146,12 @@ def spectral_entropy():
             properties:
                 spectrum:
                     type: array
-                    description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).
+                    description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).  Peaks should be sorted in increasing order of m/z values.
                     example: [[10.5, 20], [20, 100], [50, 1]]
 
     responses:
       200:
-        description: OK
+        description: The spectral entropy of the spectrum.
     """
     entropy = spectrum.calculate_spectral_entropy(request.get_json()["spectrum"])
     return jsonify({"entropy": entropy})
@@ -1150,29 +1170,27 @@ def entropy_similarity():
             properties:
                 spectrum1:
                     type: array
-                    description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).
+                    description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).  Peaks should be sorted in increasing order of m/z values.
                     example: [[10.5, 20], [20, 100], [50, 1]]
                 spectrum2:
                     type: array
-                    description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).
+                    description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).  Peaks should be sorted in increasing order of m/z values.
                     example: [[10.5, 20], [20, 100], [50, 1]]
                 type:
                     type: string
                     description: Type of mass window to use.  Should be either "da" or "ppm".
                 window:
                     type: number
-                    description: Size of the mass window to use.
+                    description: Size of the mass window to use.  Will be in units of the 'type' argument.
 
     responses:
       200:
-        description: OK
+        description: The entropy similarity of the two spectra.
     """
     post_data = request.get_json()
-    print(post_data.get("type"))
     if post_data.get("type") is None:
         similarity = spectrum.calculate_entropy_similarity(post_data["spectrum_1"], post_data["spectrum_2"])
     elif post_data["type"].lower() == "da":
-        print(post_data["window"])
         similarity = spectrum.calculate_entropy_similarity(post_data["spectrum_1"], post_data["spectrum_2"],
                                                            da_error=post_data["window"])
     else:
@@ -1184,21 +1202,23 @@ def entropy_similarity():
 @app.post("/api/amos/record_counts_by_dtxsid/")
 def get_record_counts_by_dtxsid():
     """
-    Takes a list of DTXSIDs, and for each DTXSID, it returns a dictionary containing the counts of record types that are present in the database.
+    Returns a dictionary containing the counts of record types that are present in the database for each supplied DTXSID.
     ---
     parameters:
       - in: body
         name: body
         schema:
-            id: record_counts_by_dtxsid_request
+            id: RecordCountsByDTXSIDRequest
             properties:
-            dtxsids:
+              dtxsids:
                 type: array
+                example: ["DTXSID123", "DTXSID456"]
+                description: List of DTXSIDs to search for.
                 items:
-                    type: string
+                  type: string
     responses:
       200:
-        description: OK
+        description: A JSON object of record counts per DTXSID.
     """
     dtxsid_list = request.get_json()["dtxsids"]
     record_count_dict = cq.record_counts_by_dtxsid(dtxsid_list)
@@ -1208,12 +1228,9 @@ def get_record_counts_by_dtxsid():
 @app.post("/api/amos/max_similarity_by_dtxsid/")
 def max_similarity_by_dtxsid():
     """
-    This endpoint allows a user to submit a list of DTXSIDs and a mass spectrum.
-    In response, the user will get back the DTXSIDs mapped to similarity scores.
-    The scores will be the highest similarity score computed on the user-supplied spectrum and all spectra in this database for that DTXSID.
-    If no spectra were found, the DTXSID will map to None.
+    Given a list of DTXSIDs and a list of mass spectra, return a highest similarity score for each combination of DTXSID and spectrum.
 
-    This access point is intended to be used by CFMID.
+    This endpoint is intended for use with INTERPRET NTA.
     ---
     parameters:
       - in: body
@@ -1221,13 +1238,28 @@ def max_similarity_by_dtxsid():
         schema:
             id: max_similarity_by_dtxsid_request
             properties:
-                dtxsids:
-                    type: array
-                    items:
-                        type: string
+              dtxsids:
+                type: array
+                example: ["DTXSID123", "DTXSID456"]
+                description: List of DTXSIDs to search for.
+                items:
+                  type: string
+              spectra:
+                type: array
+                description: A list of spectra, where each spectrum is an array of m/z-intensity pairs formatted as two-element arrays.
+                example: [[[10, 20], [23, 100]], [[15,30], [24.5, 100], [33, 9]]]
+              da_window:
+                type: number
+                description: Mass window in units of daltons.  If not null, this will be used for similarity calculations, regardless of whether ppm_window is supplied.
+              ppm_window:
+                type: number
+                description: Mass window in units of parts per million.  Will only be used if da_window is null or not passed and ppm_window is not null.
+              ms_level:
+                type: integer
+                description: Level of mass spectrometry; if supplied, then only spectra at the specified level will be returned.  Valid values are from 1 to 5.
     responses:
       200:
-        description: OK
+        description: A JSON object with DTXSIDs as keys and an array of highest found entropy similarity scores as the values.  The order of values in the array corresponds to their order in the list of user-submitted spectra.  If no spectra were found for a given DTXSID, the DTXSID will map to None.
     """
     request_json = request.get_json()
     dtxsids = request_json["dtxsids"]
@@ -1261,6 +1293,43 @@ def max_similarity_by_dtxsid():
 
 @app.post("/api/amos/all_similarities_by_dtxsid/")
 def all_similarities_by_dtxsid():
+    """
+    Given a list of DTXSIDs and a list of mass spectra, return a highest similarity score for each combination of DTXSID and spectrum.
+
+    This endpoint is intended for use with INTERPRET NTA.
+    ---
+    parameters:
+      - in: body
+        name: body
+        schema:
+            id: max_similarity_by_dtxsid_request
+            properties:
+              dtxsids:
+                type: array
+                example: ["DTXSID123", "DTXSID456"]
+                description: List of DTXSIDs to search for.
+                items:
+                  type: string
+              spectra:
+                type: array
+                description: A list of spectra, where each spectrum is an array of m/z-intensity pairs formatted as two-element arrays.  Maximum intensity should be scaled to 100.
+                example: [[[10, 20], [23, 100]], [[15,30], [24.5, 100], [33, 9]]]
+              da_window:
+                type: number
+                description: Mass window in units of daltons.  If not null, this will be used for similarity calculations, regardless of whether ppm_window is supplied.
+              ppm_window:
+                type: number
+                description: Mass window in units of parts per million.  Will only be used if da_window is null or not passed and ppm_window is not null.
+              ms_level:
+                type: integer
+                description: Level of mass spectrometry; if supplied, then only spectra at the specified level will be returned.  Valid values are from 1 to 5.
+              min_intensity:
+                type: number
+                description: Minimum intensity level for peaks in both the user and database spectra to consider.  All database spectra are scaled to have a maximum intensity of 100, and all user spectra are assumed to be scaled the same.
+    responses:
+      200:
+        description: An array of JSON objects, where each element in the array corresponds to a user spectrum.  Each JSON objects has DTXSIDs as keys and a list of dictionaries containing similarity information and spectrum metadata, with one entry per database spectrum, as the values.
+    """
     request_json = request.get_json()
     dtxsids = request_json["dtxsids"]
     if type(dtxsids) == str:
@@ -1321,16 +1390,16 @@ def all_similarities_by_dtxsid():
 @app.get("/api/amos/get_info_by_id/<internal_id>")
 def get_info_by_id(internal_id):
     """
-    Return information by internal record id
+    Returns general information about a record by ID.
     ---
     parameters:
       - in: path
         name: internal_id
         type: string
-        description: ID of the document in the database.
+        description: Unique ID of the record of interest.
     responses:
       200:
-        description: Record information.
+        description: Record information for the specified ID.
     """
     q = db.select(RecordInfo).filter(RecordInfo.internal_id == internal_id)
     result = db.session.execute(q).first()
@@ -1343,11 +1412,11 @@ def get_info_by_id(internal_id):
 @app.get("/api/amos/database_summary/")
 def database_summary():
     """
-    Return database summary information.
+    Returns a summary of the records in the database, organized by record types, methodologies, and sources.
     ---
     responses:
       200:
-        description: Database summary information.
+        description: A summary of the data in the database.
     """
     summary_info = cq.database_summary()
     return jsonify(summary_info)
@@ -1360,15 +1429,18 @@ def mass_spectra_for_substances():
     ---
     parameters:
       - in: body
-        name: dtxsids
-        required: true
+        name: body
         schema:
-          type: array
-          items:
-            type: string
+            properties:
+              dtxsids:
+                type: array
+                example: ["DTXSID123", "DTXSID456"]
+                description: List of DTXSIDs to search for.
+                items:
+                  type: string
     responses:
       200:
-        description: OK
+        description: A JSON object containing a list of spectra and a mapping of DTXSIDs to names for any substances found.
     """
     dtxsids = request.get_json()["dtxsids"]
     spectrum_results = cq.mass_spectra_for_substances(dtxsids)
@@ -1380,15 +1452,19 @@ def mass_spectra_for_substances():
 def get_image_for_dtxsid(dtxsid):
     """
     Retrieves a substance's image from the database.
+
+    Only substance images not available through the main CompTox API are stored in the database.
     ---
     parameters:
       - in: path
         name: dtxsid
         type: string
-        description: DTXSID of the substance.
+        description: The DTXSID for the substance of interest.
     responses:
       200:
-        description: PNG image of the substance
+        description: The PNG image of the substance.
+      204:
+        description: No image matching the DTXSID was found.
     """
     q = db.select(SubstanceImages.png_image).filter(SubstanceImages.dtxsid == dtxsid)
     result = db.session.execute(q).first()
@@ -1405,19 +1481,18 @@ def get_image_for_dtxsid(dtxsid):
 @app.get("/api/amos/substring_search/<substring>")
 def substring_search(substring):
     """
-    Searches the database for substances by substring.
-    Both the preferred name and the synonyms are searched. This returns a list
-    of substances, synonyms that matched the search (if any), and the
-    record counts for each substance.
+    Returns information on substances where the specified substring is in or equal to a name.
+
+    Substances where either the EPA-preferred name or an EPA-recorgnized synonyms are returned. This returns a list of substances, synonyms that matched the search (if any), and the record counts for each substance.
     ---
     parameters:
       - in: path
         name: substring
         type: string
-        description: A string to search by
+        description: A name substring to search by.  
     responses:
       200:
-        description: List of substances, synonyms that matched the search (if any), and the record counts for each substance
+        description: A JSON object of substances with DTXSIDs as keys, and substance information -- including names, matching synonyms, (if any), and additional information -- as the values.
     """
 
     preferred_names, synonyms = cq.substring_search(substring)
@@ -1444,16 +1519,17 @@ def substring_search(substring):
 def get_ms_ready_methods(inchikey):
     """
     Retrieves a list of methods that contain the MS-Ready forms of a given substance but not the substance itself.
-    These methods are found by looking for substances which match the first block of the given InChIKey.
+
+    These methods are found by looking for substances which match the first block of the given InChIKey.  This only checks against JChem InChIKeys, not Indigo ones.
     ---
     parameters:
       - in: path
         name: inchikey
         type: string
-        description: InChIKey to search by
+        description: InChIKey to search by.
     responses:
       200:
-        description: List of MS-Ready methods.
+        description: An array listing the found methods and supplemental information about them.
     """
     first_block = inchikey.split("-")[0]
     q = db.select(
@@ -1487,16 +1563,16 @@ def get_ms_ready_methods(inchikey):
 @app.get("/api/amos/get_substance_file_for_record/<internal_id>")
 def get_substance_file_for_record(internal_id):
     """
-    Creates an Excel workbook listing the substances in the specified record.
+    Creates an Excel workbook listing the substances in the specified record with some additional identifiers.
     ---
     parameters:
       - in: path
         name: internal_id
-        type: integer
-        description: Internal database ID of the record.
+        type: string
+        description: Unique ID of the record of interest.
     responses:
       200:
-        description: Excel workbook listing the substances in the specified record.
+        description: An Excel workbook listing the substances in the specified record.
     """
     substance_list = find_dtxsids(internal_id).json["substance_list"]
     substance_list = [(sl["dtxsid"], sl["casrn"], sl["preferred_name"]) for sl in substance_list]
@@ -1515,14 +1591,14 @@ def analytical_qc_list():
     ---
     responses:
       200:
-        description: AnalyticalQC PDFs in the database.
+        description: A list of information on AnalyticalQC PDFs in the database.
     """
     q = db.select(
         Contents.internal_id, Contents.dtxsid, Substances.preferred_name, Substances.casrn,
-        Substances.molecular_formula,
-        AnalyticalQC.experiment_date, AnalyticalQC.timepoint, AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint,
-        AnalyticalQC.stability_call, AnalyticalQC.annotation, AnalyticalQC.study, AnalyticalQC.sample_id,
-        AnalyticalQC.lcms_amen_pos_true, AnalyticalQC.lcms_amen_neg_true, AnalyticalQC.flags
+        Substances.molecular_formula, AnalyticalQC.experiment_date, AnalyticalQC.timepoint,
+        AnalyticalQC.first_timepoint, AnalyticalQC.last_timepoint, AnalyticalQC.stability_call, AnalyticalQC.annotation,
+        AnalyticalQC.study, AnalyticalQC.sample_id, AnalyticalQC.lcms_amen_pos_true, AnalyticalQC.lcms_amen_neg_true,
+        AnalyticalQC.flags
     ).join_from(
         AnalyticalQC, Contents, AnalyticalQC.internal_id == Contents.internal_id
     ).join_from(
@@ -1535,16 +1611,16 @@ def analytical_qc_list():
 @app.get("/api/amos/additional_sources_for_substance/<dtxsid>")
 def additional_sources_for_substance(dtxsid):
     """
-    Retrieves links for supplemental sources (e.g., Wikipedia, ChemExpo) for a given DTXSID.
+    Retrieves links for supplemental sources (e.g., Wikipedia, ChemExpo) for a given DTXSID, if any are available.
     ---
     parameters:
       - in: path
         name: dtxsid
         type: string
-        description: DTXSID of the substance.
+        description: The DTXSID for the substance of interest.
     responses:
       200:
-        description: Links for supplemental sources (e.g., Wikipedia, ChemExpo)
+        description: A list of source names paired with the corresponding links.
     """
     sources = cq.additional_sources_by_substance(dtxsid)
     return jsonify(sources)
@@ -1558,11 +1634,11 @@ def retrieve_nmr_spectrum(internal_id):
     parameters:
       - in: path
         name: internal_id
-        type: integer
-        description: The unique internal identifier for the spectrum that's being looked for.
+        type: string
+        description: Unique ID of the NMR spectrrum of interest.
     responses:
       200:
-        description: A JSON structure containing the information about the spectrum.
+        description: A JSON object containing the spectrum and metadata about it.
     """
     q = db.select(
         NMRSpectra.intensities, NMRSpectra.first_x, NMRSpectra.last_x, NMRSpectra.x_units,
@@ -1581,16 +1657,16 @@ def retrieve_nmr_spectrum(internal_id):
 @app.get("/api/amos/get_classification_for_dtxsid/<dtxsid>")
 def get_classification_for_dtxsid(dtxsid):
     """
-    Returns the classification of a given substance.
+    Returns the top four levels of a ClassyFire classification of a given substance.
     ---
     parameters:
       - in: path
         name: dtxsid
         type: string
-        description: DTXSID of the substance.
+        description: The DTXSID for the substance of interest.
     responses:
       200:
-        description: JSON with classification information.
+        description: A JSON object with the top four levels of ClassyFire information.
     """
     classification_info = cq.classyfire_for_dtxsid(dtxsid)
     if classification_info is not None:
@@ -1601,13 +1677,39 @@ def get_classification_for_dtxsid(dtxsid):
 
 @app.post("/api/amos/substances_for_classification/")
 def substances_for_classification():
+    """
+    Returns a list of substances in the database which match the specified top four levels of a ClassyFire classification.
+
+    Note that "class" is spelled with a "k" in the arguments to avoid possible issues with using a common programming keyword.  Additionally, not all substances in the database have a ClassyFire classification.
+    ---
+    parameters:
+      - in: body
+        name: body
+        schema:
+            id: ClassyFireClassification
+            properties:
+              kingdom:
+                type: string
+                description: Kingdom-level (highest) classification of a substance.
+              superklass:
+                type: string
+                description: Superclass-level (second-highest) classification of a substance.
+              klass:
+                type: string
+                description: Class-level (third-highest) classification of a substance.
+              subklass:
+                type: string
+                description: Subclass-level (fourth-highest) classification of a substance.
+    responses:
+      200:
+        description: A list of matching substances with supporting information.
+    """
     request_json = request.get_json()
     kingdom, superklass, klass, subklass = request_json.get("kingdom"), request_json.get(
         "superklass"), request_json.get("klass"), request_json.get("subklass")
     query = db.select(
         ClassyFire.dtxsid, Substances.casrn, Substances.preferred_name, Substances.monoisotopic_mass,
-        Substances.molecular_formula,
-        Substances.image_in_comptox
+        Substances.molecular_formula, Substances.image_in_comptox
     ).join_from(ClassyFire, Substances, ClassyFire.dtxsid == Substances.dtxsid).filter(
         (ClassyFire.kingdom == kingdom) & (ClassyFire.superklass == superklass) & (ClassyFire.klass == klass) & (
                 ClassyFire.subklass == subklass)
@@ -1627,6 +1729,35 @@ def substances_for_classification():
 
 @app.post("/api/amos/next_level_classification/")
 def next_level_classification():
+    """
+    Returns a list of categories for the specified level of ClassyFire classification, given the higher levels of classification.
+
+    Can search for
+    - All superclasses for a given kingdom
+    - All classes for a given kingdom and superclass
+    - All subclasses for a given kingdom, superclass, and class 
+
+    Note that "class" is spelled with a "k" in the arguments to avoid possible issues with using a common programming keyword.
+    ---
+    parameters:
+      - in: body
+        name: body
+        schema:
+            id: ClassyFireClassification
+            properties:
+              kingdom:
+                type: string
+                description: Kingdom-level (highest) classification of a substance.  Always required.
+              superklass:
+                type: string
+                description: Superclass-level (second-highest) classification of a substance.  Required if requesting a list of classes or subclasses.
+              klass:
+                type: string
+                description: Class-level (third-highest) classification of a substance.  Required if requesting a list of subclasses.
+    responses:
+      200:
+        description: A list of superclasses, classes, or subclasses, as appropriate.
+    """
     request_json = request.get_json()
     kingdom, superklass, klass = request_json.get("kingdom"), request_json.get("superklass"), request_json.get("klass")
 
@@ -1654,16 +1785,16 @@ def next_level_classification():
 @app.get("/api/amos/fact_sheets_for_substance/<dtxsid>")
 def fact_sheets_for_substance(dtxsid):
     """
-    Returns a list of fact sheets that are associated with the given DTXSID.
+    Returns a list of fact sheet IDs that are associated with the given DTXSID.
     ---
     parameters:
       - in: path
         name: dtxsid
         type: string
-        description: DTXSID of the substance.
+        description: The DTXSID for the substance of interest.
     responses:
       200:
-        description: List of fact sheets.
+        description: A list of fact sheet IDs.
     """
     info_list = cq.ids_for_substances([dtxsid], record_type="Fact Sheet")
     fact_sheet_ids = [r["internal_id"] for r in info_list]
@@ -1677,7 +1808,7 @@ def data_source_info():
     ---
     responses:
       200:
-        description: JSON with the list of major data sources
+        description: List of JSON objects with information on major data sources.
     """
     query = db.select(DataSourceInfo)
     return [c[0].get_row_contents() for c in db.session.execute(query).all()]
@@ -1686,13 +1817,13 @@ def data_source_info():
 @app.get("/api/amos/record_id_search/<internal_id>")
 def record_id_search(internal_id):
     """
-    Record information by ID
+    Searches for a record in the database by ID.
     ---
     parameters:
       - in: path
         name: internal_id
-        type: integer
-        description: The unique internal identifier for the spectrum that's being looked for.
+        type: string
+        description: Unique ID of the record of interest.
     responses:
       200:
         description: A JSON structure containing the information about the record.
@@ -1709,24 +1840,18 @@ def record_id_search(internal_id):
 @app.get("/api/amos/functional_uses_for_dtxsid/<dtxsid>")
 def functional_uses_for_dtxsid(dtxsid):
     """
-    Returns a list of functional uses for a substance
+    Returns a list of functional use classifications for a substance.
     ---
     parameters:
       - in: path
         name: dtxsid
         type: string
-        description: DTXSID of the substance.
+        description: The DTXSID for the substance of interest.
     responses:
       200:
-        description: List of functional uses.
+        description: List of functional uses, or None if no functional uses are mapped to the DTXSID.
     """
 
-    """query = db.select(FunctionalUseClasses.functional_classes).filter(FunctionalUseClasses.dtxsid==dtxsid)
-    result = db.session.execute(query).first()
-    if result:
-        return jsonify(result._asdict())
-    else:
-        return jsonify({"functional_classes": None})"""
     functional_use_dict = cq.functional_uses_for_dtxsids([dtxsid])
     return jsonify({"functional_classes": functional_use_dict.get(dtxsid, None)})
 
@@ -1740,7 +1865,7 @@ def dtxsids_for_functional_use(functional_use):
       - in: path
         name: functional_use
         type: string
-        description: Functional use to search by
+        description: Functional use class.
     responses:
       200:
         description: List of DTXSIDs for the given functional use.
@@ -1753,16 +1878,18 @@ def dtxsids_for_functional_use(functional_use):
 @app.get("/api/amos/formula_search/<formula>")
 def formula_search(formula):
     """
-    Returns a list of substances found by MF
+    Returns a list of substances that have the given molecular formula.
+
+    The molecular formula is assumed to be in Hill form, which simply counts the number of atoms of each element that are present, and orders them alphabetically.  The exception is substances with carbon, where the atoms will be listed in the order of carbon, hydrogen, and then alphabetical order of everything else (e.g., C8H14ClN5 for atrazine).
     ---
     parameters:
       - in: path
         name: formula
         type: string
-        description: Molecular furmula to search by.
+        description: Molecular furmula to search by.  Formula should be in Hill form.
     responses:
       200:
-        description: List of DTXSIDs for the given functional use.
+        description: List of DTXSIDs with the given molecular formula.
     """
     substances = cq.formula_search(formula)
     dtxsids = [s["dtxsid"] for s in substances]
@@ -1774,16 +1901,16 @@ def formula_search(formula):
 @app.get("/api/amos/inchikey_first_block_search/<first_block>")
 def inchikey_first_block_search(first_block):
     """
-    Returns a list of substances found by InChI key.
+    Returns a list of substances found by InChIKey.
     ---
     parameters:
       - in: path
         name: first_block
         type: string
-        description: First block of InChI key to search by.
+        description: First block of an InChIKey.
     responses:
       200:
-        description: List of substances found by InChI key.
+        description: List of substances found by InChIKey.
     """
     substances = cq.inchikey_first_block_search(first_block)
     dtxsids = [s["dtxsid"] for s in substances]
@@ -1795,16 +1922,16 @@ def inchikey_first_block_search(first_block):
 @app.get("/api/amos/get_ir_spectrum/<internal_id>")
 def get_ir_spectrum(internal_id):
     """
-    Returns a list of IR spectra by ID.
+    Returns an IR spectrum by database ID.
     ---
     parameters:
       - in: path
         name: internal_id
-        type: integer
-        description: The unique internal identifier for the spectrum that's being looked for.
+        type: string
+        description: Unique ID of the IR spectrum of interest.
     responses:
       200:
-        description: A JSON structure containing the information about the IR spectrum.
+        description: A JSON object containing the IR spectrum and supporting metadata.
     """
     q = db.select(
         InfraredSpectra.first_x, InfraredSpectra.intensities, InfraredSpectra.ir_type,
@@ -1820,6 +1947,25 @@ def get_ir_spectrum(internal_id):
 
 @app.post("/api/amos/mass_range_search/")
 def mass_range_search():
+    """
+    Returns a list of substances whose monoisotopic mass falls within the specified range.
+    ---
+    parameters:
+      - in: body
+        name: body
+        schema:
+            id: MassRangeSubstanceSearch
+            properties:
+              lower_mass_limit:
+                type: number
+                description: Lower limit of the mass range to search for.
+              upper_mass_limit:
+                type: number
+                description: Upper limit of the mass range to search for.
+    responses:
+      200:
+        description: A list of substances and additional information about them.
+    """
     request_json = request.get_json()
     lower_mass_limit = request_json["lower_mass_limit"]
     upper_mass_limit = request_json["upper_mass_limit"]
@@ -1839,10 +1985,12 @@ def record_type_count(record_type):
       - in: path
         name: record_type
         type: string
-        description: Record type to search by
+        description: Record type.  Accepted values are "analytical_qc", "fact_sheets", and "methods".
     responses:
       200:
         description: Count of record types.
+      204:
+        description: Invalid record type selection.
     """
     possible_record_types = {"analytical_qc", "fact_sheets", "methods"}
     if record_type in possible_record_types:
@@ -1861,7 +2009,7 @@ def record_type_count(record_type):
 @app.get("/api/amos/method_pagination/<limit>/<offset>")
 def method_pagination(limit, offset):
     """
-    Returns a paginated list of methods.
+    Returns information on a batch of methods.  Intended to be used for pagination of the data instead of trying to transfer all the information in one transaction.
     ---
     parameters:
       - in: path
@@ -1874,7 +2022,7 @@ def method_pagination(limit, offset):
         description: Offset of method records to return.
     responses:
       200:
-        description: Methods information
+        description: A list of information on a batch of methods.
     """
     q = db.select(
         Methods.internal_id, Methods.method_name, Methods.method_number, Methods.date_published, Methods.matrix,
@@ -1908,7 +2056,7 @@ def method_pagination(limit, offset):
 @app.get("/api/amos/fact_sheet_pagination/<limit>/<offset>")
 def fact_sheet_pagination(limit, offset):
     """
-    Returns a paginated list of fact sheets.
+    Returns information on a batch of fact sheets.  Intended to be used for pagination of the data instead of trying to transfer all the information in one transaction.
     ---
     parameters:
       - in: path
@@ -1921,7 +2069,7 @@ def fact_sheet_pagination(limit, offset):
         description: Offset of fact sheets to return.
     responses:
       200:
-        description: Fact sheets information
+        description: A list of information on a batch of fact sheets.
     """
     q = db.select(
         FactSheets.internal_id, FactSheets.fact_sheet_name, FactSheets.analyte, FactSheets.document_type,
@@ -1950,21 +2098,21 @@ def fact_sheet_pagination(limit, offset):
 @app.get("/api/amos/analytical_qc_pagination/<limit>/<offset>")
 def analytical_qc_pagination(limit, offset):
     """
-        Returns a paginated list of Analytical QC.
-        ---
-        parameters:
-          - in: path
-            name: limit
-            type: integer
-            description: Limit of records to return.
-          - in: path
-            name: offset
-            type: integer
-            description: Offset of the records to return.
-        responses:
-          200:
-            description: List of Analytical QC.
-        """
+    Returns information on a batch of Analytical QC documents.  Intended to be used for pagination of the data instead of trying to transfer all the information in one transaction.
+    ---
+    parameters:
+      - in: path
+        name: limit
+        type: integer
+        description: Limit of records to return.
+      - in: path
+        name: offset
+        type: integer
+        description: Offset of the records to return.
+    responses:
+      200:
+        description: List of information on Analytical QC documents.
+    """
     q = db.select(
         Contents.internal_id, Contents.dtxsid, Substances.preferred_name, Substances.casrn,
         Substances.molecular_formula,
