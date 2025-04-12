@@ -1123,6 +1123,8 @@ def mass_spectrum_similarity_search():
                 type: array
                 description: Array of two-element numeric arrays.  The two-element arrays represent a single peak in the spectrum, in the format [m/z, intensity].  Peaks should be sorted in ascending order of m/z values.
                 example: [[217.0696, 100.0],[218.0721,10.229229]]
+                items:
+                  type: array
               type:
                 type: string
                 description: Type of mass window to use for entropy similarity calculations.  Can be either "da" or "ppm".
@@ -1175,7 +1177,8 @@ def spectral_entropy():
                     type: array
                     description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).  Peaks should be sorted in increasing order of m/z values.
                     example: [[10.5, 20], [20, 100], [50, 1]]
-
+                    items:
+                      type: array
     responses:
       200:
         description: The spectral entropy of the spectrum.
@@ -1199,10 +1202,14 @@ def entropy_similarity():
                     type: array
                     description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).  Peaks should be sorted in increasing order of m/z values.
                     example: [[10.5, 20], [20, 100], [50, 1]]
+                    items:
+                      type: array
                 spectrum_2:
                     type: array
                     description: Array of m/z intensity pairs.  Should be formatted as an array of two-element arrays, each of which has the m/z value and the intensity value (in that order).  Peaks should be sorted in increasing order of m/z values.
                     example: [[10.5, 20], [22, 100], [50, 1.5]]
+                    items:
+                      type: array
                 type:
                     type: string
                     description: Type of mass window to use.  Should be either "da" or "ppm".
@@ -1277,6 +1284,8 @@ def max_similarity_by_dtxsid():
                 type: array
                 description: A list of spectra, where each spectrum is an array of m/z-intensity pairs formatted as two-element arrays.
                 example: [[[217.0696, 100.0], [218.0721, 10.229229]]]
+                items:
+                  type: array
               da_window:
                 type: number
                 description: Mass window in units of daltons.  If not null, this will be used for similarity calculations, regardless of whether ppm_window is supplied.
@@ -1345,6 +1354,8 @@ def all_similarities_by_dtxsid():
                 type: array
                 description: A list of spectra, where each spectrum is an array of m/z-intensity pairs formatted as two-element arrays.  Maximum intensity should be scaled to 100.
                 example: [[[10, 20], [23, 100]], [[15,30], [24.5, 100], [33, 9]]]
+                items:
+                  type: array
               da_window:
                 type: number
                 description: Mass window in units of daltons.  If not null, this will be used for similarity calculations, regardless of whether ppm_window is supplied.
