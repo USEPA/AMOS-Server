@@ -151,6 +151,7 @@ def get_substances_for_search_term(search_term):
     parameters:
       - in: path
         name: search_term
+        required: true
         type: string
         description: A substance identifier.  If it cannot be parsed as an InChIKey, CASRN, or DTXSID, it is assumed to be a name.
     responses:
@@ -214,6 +215,7 @@ def search_results(dtxsid):
     parameters:
       - in: path
         name: dtxsid
+        required: true
         type: string
         description: The DTXSID for the substance of interest.
     responses:
@@ -285,6 +287,7 @@ def retrieve_mass_spectrum(internal_id):
     parameters:
       - in: path
         name: internal_id
+        required: true
         type: string
         description: Unique ID of the mass spectrum of interest.
     responses:
@@ -390,10 +393,12 @@ def get_pdf(record_type, internal_id):
     parameters:
       - in: path
         name: record_type
+        required: true
         type: string
         description: A string indicating which kind of record is being retrieved.  Valid values are 'fact sheet', 'method', and 'spectrum pdf'.
       - in: path
         name: internal_id
+        required: true
         type: string
         description: Unique ID of the document of interest.
     responses:
@@ -423,10 +428,12 @@ def get_pdf_metadata(record_type, internal_id):
     parameters:
       - in: path
         name: record_type
+        required: true
         type: string
         description: A string indicating which kind of record is being retrieved. Valid values are 'spectrum, 'fact sheet', and 'method'.
       - in: path
         name: internal_id
+        required: true
         type: string
         description: Unique ID of the PDF of interest.
     responses:
@@ -450,6 +457,7 @@ def find_dtxsids(internal_id):
     parameters:
       - in: path
         name: internal_id
+        required: true
         type: string
         description: Unique ID of the record of interest.
     responses:
@@ -473,6 +481,7 @@ def find_similar_substances(dtxsid, similarity_threshold=0.8):
     parameters:
       - in: path
         name: dtxsid
+        required: true
         type: string
         description: The DTXSID for the substance of interest.
     responses:
@@ -505,6 +514,7 @@ def get_similar_structures(dtxsid):
     parameters:
       - in: path
         name: dtxsid
+        required: true
         type: string
         description: The DTXSID for the substance of interest.
     responses:
@@ -948,10 +958,12 @@ def method_with_spectra_search(search_type, internal_id):
     parameters:
       - in: path
         name: search_type
+        required: true
         type: string
         description: How to search the database.  Valid values are "spectrum" and "method".
       - in: path
         name: internal_id
+        required: true
         type: string
         description: Unique ID of the spectrum or method of interest.
     responses:
@@ -1418,6 +1430,7 @@ def get_info_by_id(internal_id):
     parameters:
       - in: path
         name: internal_id
+        required: true
         type: string
         description: Unique ID of the record of interest.
     responses:
@@ -1486,6 +1499,7 @@ def get_image_for_dtxsid(dtxsid):
     parameters:
       - in: path
         name: dtxsid
+        required: true
         type: string
         description: The DTXSID for the substance of interest.
     responses:
@@ -1516,6 +1530,7 @@ def substring_search(substring):
     parameters:
       - in: path
         name: substring
+        required: true
         type: string
         description: A name substring to search by.
     responses:
@@ -1553,6 +1568,7 @@ def get_ms_ready_methods(inchikey):
     parameters:
       - in: path
         name: inchikey
+        required: true
         type: string
         description: InChIKey to search by.
     responses:
@@ -1596,6 +1612,7 @@ def get_substance_file_for_record(internal_id):
     parameters:
       - in: path
         name: internal_id
+        required: true
         type: string
         description: Unique ID of the record of interest.
     responses:
@@ -1644,6 +1661,7 @@ def additional_sources_for_substance(dtxsid):
     parameters:
       - in: path
         name: dtxsid
+        required: true
         type: string
         description: The DTXSID for the substance of interest.
     responses:
@@ -1690,6 +1708,7 @@ def get_classification_for_dtxsid(dtxsid):
     parameters:
       - in: path
         name: dtxsid
+        required: true
         type: string
         description: The DTXSID for the substance of interest.
     responses:
@@ -1825,6 +1844,7 @@ def fact_sheets_for_substance(dtxsid):
     parameters:
       - in: path
         name: dtxsid
+        required: true
         type: string
         description: The DTXSID for the substance of interest.
     responses:
@@ -1857,6 +1877,7 @@ def record_id_search(internal_id):
     parameters:
       - in: path
         name: internal_id
+        required: true
         type: string
         description: Unique ID of the record of interest.
     responses:
@@ -1880,6 +1901,7 @@ def functional_uses_for_dtxsid(dtxsid):
     parameters:
       - in: path
         name: dtxsid
+        required: true
         type: string
         description: The DTXSID for the substance of interest.
     responses:
@@ -1899,6 +1921,7 @@ def dtxsids_for_functional_use(functional_use):
     parameters:
       - in: path
         name: functional_use
+        required: true
         type: string
         description: Functional use class.
     responses:
@@ -1920,6 +1943,7 @@ def formula_search(formula):
     parameters:
       - in: path
         name: formula
+        required: true
         type: string
         description: Molecular furmula to search by.  Formula should be in Hill form.
     responses:
@@ -1941,6 +1965,7 @@ def inchikey_first_block_search(first_block):
     parameters:
       - in: path
         name: first_block
+        required: true
         type: string
         description: First block of an InChIKey.
     responses:
@@ -1962,6 +1987,7 @@ def get_ir_spectrum(internal_id):
     parameters:
       - in: path
         name: internal_id
+        required: true
         type: string
         description: Unique ID of the IR spectrum of interest.
     responses:
@@ -2021,6 +2047,7 @@ def record_type_count(record_type):
     parameters:
       - in: path
         name: record_type
+        required: true
         type: string
         description: Record type.  Accepted values are "analytical_qc", "fact_sheets", and "methods".
     responses:
@@ -2051,10 +2078,12 @@ def method_pagination(limit, offset):
     parameters:
       - in: path
         name: limit
+        required: true
         type: integer
         description: Limit of records to return.
       - in: path
         name: offset
+        required: true
         type: integer
         description: Offset of method records to return.
     responses:
@@ -2098,10 +2127,12 @@ def fact_sheet_pagination(limit, offset):
     parameters:
       - in: path
         name: limit
+        required: true
         type: integer
         description: Limit of records to return.
       - in: path
         name: offset
+        required: true
         type: integer
         description: Offset of fact sheets to return.
     responses:
@@ -2140,10 +2171,12 @@ def analytical_qc_pagination(limit, offset):
     parameters:
       - in: path
         name: limit
+        required: true
         type: integer
         description: Limit of records to return.
       - in: path
         name: offset
+        required: true
         type: integer
         description: Offset of the records to return.
     responses:
