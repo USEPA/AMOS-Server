@@ -629,12 +629,10 @@ def batch_search():
                 description: Filters returned results by record type.  This argument should be a dictionary with three keys with boolean values -- "Fact Sheet", "Method", and "Spectrum".  Note that the "Spectrum" flag will return spectra of all types -- mass, NMR, etc.
                 example: {"Fact Sheet": false, "Method": true, "Spectrum": true}
               additional_record_info:
-                description: Dictionary of flags for including an assortment of supplemental information, generally on a per-data-type basis.
                 schema:
                   id: BatchSearchAdditionalRecordInfo
                   properties:
                     ms:
-                      description: Flags for including additional mass spectrum information in the results.  All metadata may not be available for all spectra.  Does not include spectra stored as PDFs.
                       schema:
                         id: BatchSearchAdditionalMassSpectrumInfo
                         properties:
@@ -1691,6 +1689,7 @@ def retrieve_nmr_spectrum(internal_id):
     parameters:
       - in: path
         name: internal_id
+        required: true
         type: string
         description: Unique ID of the NMR spectrum of interest.
     responses:
