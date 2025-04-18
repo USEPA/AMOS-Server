@@ -154,6 +154,7 @@ def get_substances_for_search_term(search_term):
         required: true
         type: string
         description: A substance identifier.  If it cannot be parsed as an InChIKey, CASRN, or DTXSID, it is assumed to be a name.
+        required: true
     responses:
       200:
         description: A JSON object containing a list of substances and a variable that indicates whether there is any ambiguity in the search term.
@@ -218,6 +219,7 @@ def search_results(dtxsid):
         required: true
         type: string
         description: The DTXSID for the substance of interest.
+        required: true
     responses:
       200:
         description: A JSON object containing a list of records from the database and counts of records by record type.
@@ -290,6 +292,7 @@ def retrieve_mass_spectrum(internal_id):
         required: true
         type: string
         description: Unique ID of the mass spectrum of interest.
+        required: true
     responses:
       200:
         description: A JSON object containing the spectrum, entropy calculations, and other information.
@@ -396,11 +399,13 @@ def get_pdf(record_type, internal_id):
         required: true
         type: string
         description: A string indicating which kind of record is being retrieved.  Valid values are 'fact sheet', 'method', and 'spectrum pdf'.
+        required: true
       - in: path
         name: internal_id
         required: true
         type: string
         description: Unique ID of the document of interest.
+        required: true
     responses:
       200:
         description: The PDF being searched, in the form of an <iframe>-compatible element.
@@ -431,11 +436,13 @@ def get_pdf_metadata(record_type, internal_id):
         required: true
         type: string
         description: A string indicating which kind of record is being retrieved. Valid values are 'spectrum, 'fact sheet', and 'method'.
+        required: true
       - in: path
         name: internal_id
         required: true
         type: string
         description: Unique ID of the PDF of interest.
+        required: true
     responses:
       200:
         description: A JSON structure containing the name of the document, its associated metadata, and whether the document has associated spectra (always false for non-methods).
@@ -460,6 +467,7 @@ def find_dtxsids(internal_id):
         required: true
         type: string
         description: Unique ID of the record of interest.
+        required: true
     responses:
       200:
         description: A JSON structure containing a list of substance information.
@@ -484,6 +492,7 @@ def find_similar_substances(dtxsid, similarity_threshold=0.8):
         required: true
         type: string
         description: The DTXSID for the substance of interest.
+        required: true
     responses:
       200:
         description: A list of similar substances, or None if none were found.
@@ -517,6 +526,7 @@ def get_similar_structures(dtxsid):
         required: true
         type: string
         description: The DTXSID for the substance of interest.
+        required: true
     responses:
       200:
         description: A JSON object containing lists of the related methods, the related fact sheets, and the similar substances..
@@ -959,11 +969,13 @@ def method_with_spectra_search(search_type, internal_id):
         required: true
         type: string
         description: How to search the database.  Valid values are "spectrum" and "method".
+        required: true
       - in: path
         name: internal_id
         required: true
         type: string
         description: Unique ID of the spectrum or method of interest.
+        required: true
     responses:
       200:
         description: A JSON object containing information about the method and its associated spectra.
@@ -1442,6 +1454,7 @@ def get_info_by_id(internal_id):
         required: true
         type: string
         description: Unique ID of the record of interest.
+        required: true
     responses:
       200:
         description: Record information for the specified ID.
@@ -1511,6 +1524,7 @@ def get_image_for_dtxsid(dtxsid):
         required: true
         type: string
         description: The DTXSID for the substance of interest.
+        required: true
     responses:
       200:
         description: The PNG image of the substance.
@@ -1542,6 +1556,7 @@ def substring_search(substring):
         required: true
         type: string
         description: A name substring to search by.
+        required: true
     responses:
       200:
         description: A JSON object of substances with DTXSIDs as keys, and substance information -- including names, matching synonyms, (if any), and additional information -- as the values.
@@ -1580,6 +1595,7 @@ def get_ms_ready_methods(inchikey):
         required: true
         type: string
         description: InChIKey to search by.
+        required: true
     responses:
       200:
         description: An array listing the found methods and supplemental information about them.
@@ -1624,6 +1640,7 @@ def get_substance_file_for_record(internal_id):
         required: true
         type: string
         description: Unique ID of the record of interest.
+        required: true
     responses:
       200:
         description: An Excel workbook listing the substances in the specified record.
@@ -1673,6 +1690,7 @@ def additional_sources_for_substance(dtxsid):
         required: true
         type: string
         description: The DTXSID for the substance of interest.
+        required: true
     responses:
       200:
         description: A list of source names paired with the corresponding links.
@@ -1681,7 +1699,7 @@ def additional_sources_for_substance(dtxsid):
     return jsonify(sources)
 
 
-@app.route("/api/amos/get_nmr_spectrum/<internal_id>")
+@app.get("/api/amos/get_nmr_spectrum/<internal_id>")
 def retrieve_nmr_spectrum(internal_id):
     """
     Endpoint for retrieving a specified NMR spectrum from the database.
@@ -1692,6 +1710,7 @@ def retrieve_nmr_spectrum(internal_id):
         required: true
         type: string
         description: Unique ID of the NMR spectrum of interest.
+        required: true
     responses:
       200:
         description: A JSON object containing the spectrum and metadata about it.
@@ -1721,6 +1740,7 @@ def get_classification_for_dtxsid(dtxsid):
         required: true
         type: string
         description: The DTXSID for the substance of interest.
+        required: true
     responses:
       200:
         description: A JSON object with the top four levels of ClassyFire information.
@@ -1857,6 +1877,7 @@ def fact_sheets_for_substance(dtxsid):
         required: true
         type: string
         description: The DTXSID for the substance of interest.
+        required: true
     responses:
       200:
         description: A list of fact sheet IDs.
@@ -1890,6 +1911,7 @@ def record_id_search(internal_id):
         required: true
         type: string
         description: Unique ID of the record of interest.
+        required: true
     responses:
       200:
         description: A JSON structure containing the information about the record.
@@ -1914,6 +1936,7 @@ def functional_uses_for_dtxsid(dtxsid):
         required: true
         type: string
         description: The DTXSID for the substance of interest.
+        required: true
     responses:
       200:
         description: List of functional uses, or None if no functional uses are mapped to the DTXSID.
@@ -1934,6 +1957,7 @@ def dtxsids_for_functional_use(functional_use):
         required: true
         type: string
         description: Functional use class.
+        required: true
     responses:
       200:
         description: List of DTXSIDs for the given functional use.
@@ -1956,6 +1980,7 @@ def formula_search(formula):
         required: true
         type: string
         description: Molecular furmula to search by.  Formula should be in Hill form.
+        required: true
     responses:
       200:
         description: List of DTXSIDs with the given molecular formula.
@@ -1978,6 +2003,7 @@ def inchikey_first_block_search(first_block):
         required: true
         type: string
         description: First block of an InChIKey.
+        required: true
     responses:
       200:
         description: List of substances found by InChIKey.
@@ -2000,6 +2026,7 @@ def get_ir_spectrum(internal_id):
         required: true
         type: string
         description: Unique ID of the IR spectrum of interest.
+        required: true
     responses:
       200:
         description: A JSON object containing the IR spectrum and supporting metadata.
@@ -2060,6 +2087,7 @@ def record_type_count(record_type):
         required: true
         type: string
         description: Record type.  Accepted values are "analytical_qc", "fact_sheets", and "methods".
+        required: true
     responses:
       200:
         description: Count of record types.
@@ -2091,11 +2119,13 @@ def method_pagination(limit, offset):
         required: true
         type: integer
         description: Limit of records to return.
+        required: true
       - in: path
         name: offset
         required: true
         type: integer
         description: Offset of method records to return.
+        required: true
     responses:
       200:
         description: A list of information on a batch of methods.
@@ -2140,11 +2170,13 @@ def fact_sheet_pagination(limit, offset):
         required: true
         type: integer
         description: Limit of records to return.
+        required: true
       - in: path
         name: offset
         required: true
         type: integer
         description: Offset of fact sheets to return.
+        required: true
     responses:
       200:
         description: A list of information on a batch of fact sheets.
@@ -2184,11 +2216,13 @@ def analytical_qc_pagination(limit, offset):
         required: true
         type: integer
         description: Limit of records to return.
+        required: true
       - in: path
         name: offset
         required: true
         type: integer
         description: Offset of the records to return.
+        required: true
     responses:
       200:
         description: List of information on Analytical QC documents.
