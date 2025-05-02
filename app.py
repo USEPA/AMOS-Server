@@ -296,6 +296,8 @@ def retrieve_mass_spectrum(internal_id):
     responses:
       200:
         description: A JSON object containing the spectrum, entropy calculations, and other information.
+      204:
+        description: A message saying that no spectrum with the given ID was found.
     """
     q = db.select(
         MassSpectra.spectrum, MassSpectra.splash, MassSpectra.normalized_entropy, MassSpectra.spectral_entropy,
@@ -311,9 +313,8 @@ def retrieve_mass_spectrum(internal_id):
             data_dict["spectral_entropy"] = None
             data_dict["normalized_entropy"] = None
         return jsonify(data_dict)
-
     else:
-        return "Error: invalid internal id."
+        return Response(f"No mass spectrum with ID '{internal_id}' exists.", status=204)
 
 
 @app.get("/api/amos/fact_sheet_list")
@@ -398,7 +399,7 @@ def get_pdf(record_type, internal_id):
         name: record_type
         required: true
         type: string
-        description: A string indicating which kind of record is being retrieved.  Valid values are 'fact sheet', 'method', and 'spectrum pdf'.
+        description: A string indicating which kind of record is being retrieved.  Valid values are 'fact sheet', 'method', and 'spectrum'.
         required: true
       - in: path
         name: internal_id
@@ -409,17 +410,24 @@ def get_pdf(record_type, internal_id):
     responses:
       200:
         description: The PDF being searched, in the form of an <iframe>-compatible element.
+      204:
+        description: No record of the specified type was found for the specified ID.
+      404:
+        description: An invalid record type was supplied.
     """
 
-    pdf_content = cq.pdf_by_id(internal_id, record_type.lower())
+    if record_type.lower() not in ["fact sheet", "method", "spectrum"]:
+        return Response(f"Invalid record type '{record_type}'; accepted values are 'fact sheet', 'method', and 'spectrum'.", status=404)
 
+    pdf_content = cq.pdf_by_id(internal_id, record_type.lower())
     if pdf_content:
         response = make_response(pdf_content)
         response.headers['Content-Type'] = "application/pdf"
         response.headers['Content-Disposition'] = f"inline; filename=\"{internal_id}.pdf\""
         return response
     else:
-        return f"Error: no PDF found for internal ID '{internal_id}'."
+        return Response(f"No record found for record type '{record_type}' and record identifier '{internal_id}'.", status=204)
+
 
 
 @app.get("/api/amos/get_pdf_metadata/<record_type>/<internal_id>")
@@ -435,7 +443,7 @@ def get_pdf_metadata(record_type, internal_id):
         name: record_type
         required: true
         type: string
-        description: A string indicating which kind of record is being retrieved. Valid values are 'spectrum, 'fact sheet', and 'method'.
+        description: A string indicating which kind of record is being retrieved. Valid values are 'spectrum', 'fact sheet', and 'method'.
         required: true
       - in: path
         name: internal_id
@@ -446,20 +454,24 @@ def get_pdf_metadata(record_type, internal_id):
     responses:
       200:
         description: A JSON structure containing the name of the document, its associated metadata, and whether the document has associated spectra (always false for non-methods).
+      204:
+        description: No record of the specified type was found for the specified ID.
     """
+
+    if record_type.lower() not in ["fact sheet", "method", "spectrum"]:
+        return Response(f"Invalid record type '{record_type}'; accepted values are 'fact sheet', 'method', and 'spectrum'.", status=404)
 
     metadata = cq.pdf_metadata(internal_id, record_type.lower())
     if metadata is not None:
         return jsonify(metadata)
     else:
-        return f"Error: no PDF found for internal ID '{internal_id}'."
+        return Response(f"No record found for record type '{record_type}' and record identifier '{internal_id}'.", status=204)
 
 
 @app.get("/api/amos/find_dtxsids/<internal_id>")
 def find_dtxsids(internal_id):
     """
     Returns a list of DTXSIDs associated with the specified internal ID, along with additional substance information.
-
     ---
     parameters:
       - in: path
@@ -1714,6 +1726,8 @@ def retrieve_nmr_spectrum(internal_id):
     responses:
       200:
         description: A JSON object containing the spectrum and metadata about it.
+      204:
+        description: No NMR spectrum was found for the given internal ID.
     """
     q = db.select(
         NMRSpectra.intensities, NMRSpectra.first_x, NMRSpectra.last_x, NMRSpectra.x_units,
@@ -1726,7 +1740,7 @@ def retrieve_nmr_spectrum(internal_id):
         return jsonify(data_dict)
 
     else:
-        return "Error: invalid internal id."
+        return Response(f"No NMR spectrum found for internal ID '{internal_id}'.", status=204)
 
 
 @app.get("/api/amos/get_classification_for_dtxsid/<dtxsid>")
@@ -2030,6 +2044,8 @@ def get_ir_spectrum(internal_id):
     responses:
       200:
         description: A JSON object containing the IR spectrum and supporting metadata.
+      204:
+        description: No IR spectrum was found for the given internal ID.
     """
     q = db.select(
         InfraredSpectra.first_x, InfraredSpectra.intensities, InfraredSpectra.ir_type,
@@ -2040,7 +2056,7 @@ def get_ir_spectrum(internal_id):
         data_dict = data_row._asdict()
         return jsonify(data_dict)
     else:
-        return "Error: invalid internal id."
+        return Response(f"No IR spectrum found for internal ID '{internal_id}'.", status=204)
 
 
 @app.post("/api/amos/mass_range_search/")
